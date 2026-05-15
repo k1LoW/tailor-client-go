@@ -72,7 +72,7 @@ func WithTokens(accessToken, refreshToken string) Option {
 }
 
 // WithHTTPClient overrides the underlying HTTP client.
-func WithHTTPClient(h connect.HTTPClient) Option {
+func WithHTTPClient(h connect.HTTPClient) Option { //nostyle:repetition
 	return func(o *options) {
 		if h != nil {
 			o.httpClient = h
