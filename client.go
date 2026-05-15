@@ -1,5 +1,5 @@
 // Package tailorclient is an UNOFFICIAL Go client library for the Tailor
-// Platform Controlplane.
+// Platform.
 //
 // It does not implement its own login flow. Authentication piggybacks on the
 // official Tailor SDK (https://github.com/tailor-platform/sdk): the user logs
@@ -28,7 +28,7 @@ import (
 // DefaultPlatformURL is the production Tailor Platform endpoint.
 const DefaultPlatformURL = "https://api.tailor.tech"
 
-// Client is an authenticated Tailor Platform control-plane client.
+// Client is an authenticated Tailor Platform client.
 //
 // It embeds OperatorServiceClient, so RPC methods can be called directly
 // (e.g. c.GetApplication). The auto-refresh interceptor is wired into the

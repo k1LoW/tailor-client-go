@@ -3,9 +3,9 @@
 
 # tailor-client-go
 
-`tailor-client-go` is an **unofficial** Go client library for the [Tailor Platform](https://docs.tailor.tech/) Controlplane.
+`tailor-client-go` is an **unofficial** Go client library for the [Tailor Platform](https://docs.tailor.tech/).
 
-It does **not** implement its own login flow. Authentication piggybacks on the official [Tailor SDK](https://github.com/tailor-platform/sdk): you log in once with `npx tailor-sdk login`, and `tailor-client-go` reuses the access / refresh tokens stored by the SDK to authenticate Controlplane RPCs. Token refresh and (optionally) writeback are kept compatible with the SDK config so other Tailor tools stay in sync.
+It does **not** implement its own login flow. Authentication piggybacks on the official [Tailor SDK](https://github.com/tailor-platform/sdk): you log in once with `npx tailor-sdk login`, and `tailor-client-go` reuses the access / refresh tokens stored by the SDK to authenticate RPCs. Token refresh and (optionally) writeback are kept compatible with the SDK config so other Tailor tools stay in sync.
 
 In short, `tailorclient.New(ctx)` returns the [buf.build](https://buf.build/tailor-inc/tailor) generated connect-go `OperatorServiceClient` already wired with bearer-token auth and auto-refresh.
 
@@ -39,7 +39,7 @@ $ go get github.com/k1LoW/tailor-client-go
 
    - reads the current user's tokens from the SDK config (or keyring),
    - refreshes the access token if `token_expires_at` is in the past,
-   - retries once with a refreshed token if a Controlplane RPC returns `Unauthenticated`.
+   - retries once with a refreshed token if an RPC returns `Unauthenticated`.
 
 If you prefer to manage tokens yourself (e.g. in CI, or against a service account), pass them in explicitly with `WithTokens` and the SDK config is not touched.
 
