@@ -1,0 +1,8 @@
+analyzers:
+  disable:
+    - mixedcaps
+    - funcfmt
+    - useq
+analyzers-settings:
+  errorstrings:
+    exclude-test: true
