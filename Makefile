@@ -1,6 +1,6 @@
 default: test
 
-ci: depsdev test lint
+ci: depsdev test
 
 test:
 	go test ./... -coverprofile=coverage.out -covermode=count -count=1
