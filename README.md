@@ -3,6 +3,8 @@
 
 # tailor-client-go
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/k1LoW/tailor-client-go.svg)](https://pkg.go.dev/github.com/k1LoW/tailor-client-go) [![build](https://github.com/k1LoW/tailor-client-go/actions/workflows/ci.yml/badge.svg)](https://github.com/k1LoW/tailor-client-go/actions/workflows/ci.yml) ![Coverage](https://raw.githubusercontent.com/k1LoW/octocovs/main/badges/k1LoW/tailor-client-go/coverage.svg) ![Code to Test Ratio](https://raw.githubusercontent.com/k1LoW/octocovs/main/badges/k1LoW/tailor-client-go/ratio.svg) ![Test Execution Time](https://raw.githubusercontent.com/k1LoW/octocovs/main/badges/k1LoW/tailor-client-go/time.svg)
+
 `tailor-client-go` is an **unofficial** Go client library for the [Tailor Platform](https://docs.tailor.tech/).
 
 It does **not** implement its own login flow. Authentication piggybacks on the official [Tailor SDK](https://github.com/tailor-platform/sdk): you log in once with `npx tailor-sdk login`, and `tailor-client-go` reuses the access / refresh tokens stored by the SDK to authenticate RPCs. Token refresh and (optionally) writeback are kept compatible with the SDK config so other Tailor tools stay in sync.
