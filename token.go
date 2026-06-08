@@ -30,6 +30,9 @@ type TokenResponse struct {
 func RefreshAccessToken(platformURL, refreshToken string) (*TokenResponse, error) {
 	authURL := resolveAuthURL(platformURL)
 	clientID := resolveClientID(platformURL)
+	if clientID == "" {
+		return nil, fmt.Errorf("refresh_token flow requires a known dev or prod platform URL (got %q); use WithClientCredentials for custom or self-hosted platforms", platformURL)
+	}
 	tokenEndpoint := authURL + "/token"
 
 	slog.Info("Refreshing access token", "endpoint", tokenEndpoint, "clientId", clientID, "refreshTokenPrefix", truncate(refreshToken, 10))
@@ -134,9 +137,17 @@ func resolveAuthURL(platformURL string) string {
 	return platformURL + "/oauth2/platform"
 }
 
+// resolveClientID returns the OAuth2 client_id baked into the SDK for the
+// refresh_token grant. For self-hosted or custom platforms it returns "" so
+// RefreshAccessToken can surface an explicit error rather than silently
+// posting the production tenant's client_id to a third-party endpoint.
 func resolveClientID(platformURL string) string {
-	if platformURL == devPlatformURL {
+	switch platformURL {
+	case "", DefaultPlatformURL:
+		return prodClientID
+	case devPlatformURL:
 		return devClientID
+	default:
+		return ""
 	}
-	return prodClientID
 }

@@ -76,6 +76,13 @@ func TestResolveAuthURL(t *testing.T) {
 	}
 }
 
+func TestRefreshAccessToken_unknownPlatformRejected(t *testing.T) {
+	_, err := RefreshAccessToken("https://self-hosted.example.com", "rt-xxx")
+	if err == nil {
+		t.Fatal("expected error when refreshing against an unknown platform URL")
+	}
+}
+
 func TestFetchClientCredentialsToken_success(t *testing.T) {
 	var (
 		gotMethod      string
@@ -160,7 +167,8 @@ func TestResolveClientID(t *testing.T) {
 	}{
 		{"dev platform", devPlatformURL, devClientID},
 		{"prod platform", "https://api.tailor.tech", prodClientID},
-		{"other URL", "https://custom.example.com", prodClientID},
+		{"empty falls back to prod", "", prodClientID},
+		{"other URL returns empty (caller must use WithClientCredentials)", "https://custom.example.com", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
