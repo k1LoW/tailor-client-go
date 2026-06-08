@@ -43,15 +43,16 @@ type Client struct {
 }
 
 type options struct {
-	platformURL       string
-	accessToken       string
-	refreshToken      string
-	clientID          string
-	clientSecret      string
-	tokensProvided    bool
-	persistTokens     bool
-	httpClient        connect.HTTPClient
-	extraInterceptors []connect.Interceptor
+	platformURL               string
+	accessToken               string
+	refreshToken              string
+	clientID                  string
+	clientSecret              string
+	tokensProvided            bool
+	clientCredentialsProvided bool
+	persistTokens             bool
+	httpClient                connect.HTTPClient
+	extraInterceptors         []connect.Interceptor
 }
 
 // Option configures New.
@@ -112,6 +113,7 @@ func WithClientCredentials(clientID, clientSecret string) Option { //nostyle:rep
 	return func(o *options) {
 		o.clientID = clientID
 		o.clientSecret = clientSecret
+		o.clientCredentialsProvided = true
 	}
 }
 
@@ -137,7 +139,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 	}
 
 	switch {
-	case o.clientID != "" || o.clientSecret != "":
+	case o.clientCredentialsProvided:
 		if o.clientID == "" || o.clientSecret == "" {
 			return nil, fmt.Errorf("client_credentials option requires both clientID and clientSecret")
 		}

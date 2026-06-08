@@ -297,6 +297,18 @@ func TestNew_clientCredentials_partialOptions(t *testing.T) {
 	}
 }
 
+func TestNew_clientCredentials_emptyValuesFailFast(t *testing.T) {
+	// Both empty (e.g. unset env vars passed via os.Getenv) must NOT
+	// silently fall back to the SDK config path. Once WithClientCredentials
+	// has been supplied, that auth source is selected and validated.
+	_, err := New(context.Background(),
+		WithClientCredentials("", ""),
+	)
+	if err == nil {
+		t.Fatal("expected error when both clientID and clientSecret are empty")
+	}
+}
+
 func TestAutoRefreshInterceptor_clientCredentialsReFetch(t *testing.T) {
 	var tokenHits int
 	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
