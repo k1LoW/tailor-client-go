@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"connectrpc.com/connect"
 )
 
 const (
@@ -30,8 +32,10 @@ type TokenResponse struct {
 // RefreshAccessToken exchanges a refresh_token for a new access_token.
 //
 // ctx is propagated to the underlying HTTP request so callers can apply
-// deadlines and cancellation to the token round-trip.
-func RefreshAccessToken(ctx context.Context, platformURL, refreshToken string) (*TokenResponse, error) {
+// deadlines and cancellation to the token round-trip. httpClient overrides
+// the HTTP transport (e.g. for custom CAs or proxies on self-hosted
+// platforms); pass nil to use http.DefaultClient.
+func RefreshAccessToken(ctx context.Context, httpClient connect.HTTPClient, platformURL, refreshToken string) (*TokenResponse, error) {
 	authURL := resolveAuthURL(platformURL)
 	clientID := resolveClientID(platformURL)
 	if clientID == "" {
@@ -39,14 +43,14 @@ func RefreshAccessToken(ctx context.Context, platformURL, refreshToken string) (
 	}
 	tokenEndpoint := authURL + "/token"
 
-	slog.Info("Refreshing access token", "endpoint", tokenEndpoint, "clientId", clientID, "refreshTokenPrefix", truncate(refreshToken, 10))
+	slog.Info("Refreshing access token", "endpoint", tokenEndpoint, "clientId", clientID)
 
 	form := url.Values{}
 	form.Set("grant_type", "refresh_token")
 	form.Set("client_id", clientID)
 	form.Set("refresh_token", refreshToken)
 
-	resp, err := postForm(ctx, tokenEndpoint, form)
+	resp, err := postForm(ctx, httpClient, tokenEndpoint, form)
 	if err != nil {
 		return nil, fmt.Errorf("refresh token request: %w", err)
 	}
@@ -56,7 +60,7 @@ func RefreshAccessToken(ctx context.Context, platformURL, refreshToken string) (
 	if err != nil {
 		return nil, fmt.Errorf("read refresh response: %w", err)
 	}
-	slog.Info("Refresh response", "status", resp.StatusCode, "body", truncate(string(body), 200))
+	slog.Info("Refresh response", "status", resp.StatusCode)
 
 	var tr TokenResponse
 	if err := json.Unmarshal(body, &tr); err != nil {
@@ -76,12 +80,14 @@ func RefreshAccessToken(ctx context.Context, platformURL, refreshToken string) (
 // clientSecret.
 //
 // ctx is propagated to the underlying HTTP request so callers can apply
-// deadlines and cancellation to the token round-trip.
+// deadlines and cancellation to the token round-trip. httpClient overrides
+// the HTTP transport (e.g. for custom CAs or proxies on self-hosted
+// platforms); pass nil to use http.DefaultClient.
 //
 // Unlike RefreshAccessToken, the response does not carry a refresh_token —
 // machine user tokens are short-lived and re-fetched with the same
 // credentials when they expire or are rejected.
-func FetchClientCredentialsToken(ctx context.Context, platformURL, clientID, clientSecret string) (*TokenResponse, error) { //nostyle:repetition
+func FetchClientCredentialsToken(ctx context.Context, httpClient connect.HTTPClient, platformURL, clientID, clientSecret string) (*TokenResponse, error) { //nostyle:repetition
 	tokenEndpoint := resolveAuthURL(platformURL) + "/token"
 
 	slog.Info("Fetching client_credentials access token", "endpoint", tokenEndpoint, "clientId", clientID)
@@ -91,7 +97,7 @@ func FetchClientCredentialsToken(ctx context.Context, platformURL, clientID, cli
 	form.Set("client_id", clientID)
 	form.Set("client_secret", clientSecret)
 
-	resp, err := postForm(ctx, tokenEndpoint, form)
+	resp, err := postForm(ctx, httpClient, tokenEndpoint, form)
 	if err != nil {
 		return nil, fmt.Errorf("client_credentials request: %w", err)
 	}
@@ -130,25 +136,24 @@ func IsTokenExpired(expiresAt string) bool {
 	return time.Now().After(t)
 }
 
-// postForm issues a context-aware application/x-www-form-urlencoded POST.
+// postForm issues a context-aware application/x-www-form-urlencoded POST,
+// using httpClient (or http.DefaultClient when nil). Sharing the caller's
+// HTTP client matters for self-hosted platforms that need a custom CA
+// bundle, proxy, or transport timeout configured via WithHTTPClient.
 //
 // The gosec suppression is intentional: tokenEndpoint is built from a
 // caller-supplied platformURL (config-level trust, not external untrusted
 // input), so flagging it as taint adds no signal here.
-func postForm(ctx context.Context, tokenEndpoint string, form url.Values) (*http.Response, error) {
+func postForm(ctx context.Context, httpClient connect.HTTPClient, tokenEndpoint string, form url.Values) (*http.Response, error) {
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenEndpoint, strings.NewReader(form.Encode())) //nolint:gosec // Token endpoint is built from caller-supplied platformURL; trust boundary is the library caller's configuration
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	return http.DefaultClient.Do(req)
-}
-
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n] + "..."
+	return httpClient.Do(req)
 }
 
 func resolveAuthURL(platformURL string) string {

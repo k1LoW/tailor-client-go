@@ -53,7 +53,7 @@ func TestNew_withPlatformURL(t *testing.T) {
 }
 
 func TestAutoRefreshInterceptor_attachesBearer(t *testing.T) {
-	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "rt", "", "", nil)
+	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "rt", "", "", nil, nil)
 
 	var gotAuth string
 	next := connect.UnaryFunc(func(_ context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
@@ -72,7 +72,7 @@ func TestAutoRefreshInterceptor_attachesBearer(t *testing.T) {
 }
 
 func TestAutoRefreshInterceptor_unauthenticatedWithoutRefreshToken(t *testing.T) {
-	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "", "", "", nil)
+	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "", "", "", nil, nil)
 
 	authErr := errors.New("unauthenticated")
 	next := connect.UnaryFunc(func(_ context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
@@ -90,7 +90,7 @@ func TestAutoRefreshInterceptor_unauthenticatedWithoutRefreshToken(t *testing.T)
 }
 
 func TestAutoRefreshInterceptor_passesThroughNonAuthErrors(t *testing.T) {
-	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "rt", "", "", nil)
+	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "rt", "", "", nil, nil)
 
 	otherErr := errors.New("not found")
 	calls := 0
@@ -125,7 +125,7 @@ func (f *fakeStreamingClientConn) ResponseTrailer() http.Header   { return http.
 func (f *fakeStreamingClientConn) CloseResponse() error           { return nil }
 
 func TestAutoRefreshInterceptor_attachesBearerOnStreaming(t *testing.T) {
-	i := newAutoRefreshInterceptor("https://example.com", "tok-456", "rt", "", "", nil)
+	i := newAutoRefreshInterceptor("https://example.com", "tok-456", "rt", "", "", nil, nil)
 
 	fake := &fakeStreamingClientConn{header: http.Header{}}
 	next := connect.StreamingClientFunc(func(_ context.Context, _ connect.Spec) connect.StreamingClientConn {
@@ -324,7 +324,7 @@ func TestAutoRefreshInterceptor_clientCredentialsReFetch(t *testing.T) {
 	}))
 	defer tokenSrv.Close()
 
-	i := newAutoRefreshInterceptor(tokenSrv.URL, "old-token", "", "cid", "csecret", nil)
+	i := newAutoRefreshInterceptor(tokenSrv.URL, "old-token", "", "cid", "csecret", nil, nil)
 
 	if !i.canRefresh() {
 		t.Fatal("canRefresh should be true with client credentials")

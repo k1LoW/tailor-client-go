@@ -33,29 +33,6 @@ func TestIsTokenExpired(t *testing.T) {
 	}
 }
 
-func TestTruncate(t *testing.T) {
-	tests := []struct {
-		name string
-		s    string
-		n    int
-		want string
-	}{
-		{"shorter than n", "abc", 5, "abc"},
-		{"equal to n", "abcde", 5, "abcde"},
-		{"longer than n", "abcdef", 5, "abcde..."},
-		{"empty string", "", 5, ""},
-		{"zero n", "abc", 0, "..."},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := truncate(tt.s, tt.n)
-			if got != tt.want {
-				t.Errorf("truncate(%q, %d) = %q, want %q", tt.s, tt.n, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestResolveAuthURL(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -81,7 +58,7 @@ func TestResolveAuthURL(t *testing.T) {
 }
 
 func TestRefreshAccessToken_unknownPlatformRejected(t *testing.T) {
-	_, err := RefreshAccessToken(context.Background(), "https://self-hosted.example.com", "rt-xxx")
+	_, err := RefreshAccessToken(context.Background(), nil, "https://self-hosted.example.com", "rt-xxx")
 	if err == nil {
 		t.Fatal("expected error when refreshing against an unknown platform URL")
 	}
@@ -113,7 +90,7 @@ func TestFetchClientCredentialsToken_success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr, err := FetchClientCredentialsToken(context.Background(), srv.URL, "cid", "csecret")
+	tr, err := FetchClientCredentialsToken(context.Background(), nil, srv.URL, "cid", "csecret")
 	if err != nil {
 		t.Fatalf("FetchClientCredentialsToken: %v", err)
 	}
@@ -157,7 +134,7 @@ func TestFetchClientCredentialsToken_error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := FetchClientCredentialsToken(context.Background(), srv.URL, "cid", "bad")
+	_, err := FetchClientCredentialsToken(context.Background(), nil, srv.URL, "cid", "bad")
 	if err == nil {
 		t.Fatal("expected error for invalid_client response")
 	}
@@ -173,7 +150,7 @@ func TestFetchClientCredentialsToken_contextCancellation(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := FetchClientCredentialsToken(ctx, srv.URL, "cid", "csecret")
+	_, err := FetchClientCredentialsToken(ctx, nil, srv.URL, "cid", "csecret")
 	if err == nil {
 		t.Fatal("expected error when context is already canceled")
 	}

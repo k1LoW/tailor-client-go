@@ -149,7 +149,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		if o.persistTokens {
 			return nil, fmt.Errorf("client_credentials option cannot be combined with WithTokenPersist")
 		}
-		tr, err := FetchClientCredentialsToken(ctx, o.platformURL, o.clientID, o.clientSecret)
+		tr, err := FetchClientCredentialsToken(ctx, o.httpClient, o.platformURL, o.clientID, o.clientSecret)
 		if err != nil {
 			return nil, fmt.Errorf("fetch client_credentials token: %w", err)
 		}
@@ -166,7 +166,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 
 		if IsTokenExpired(expiresAt) && rt != "" {
 			slog.Info("SDK config token is expired, refreshing proactively")
-			tr, err := RefreshAccessToken(ctx, o.platformURL, rt)
+			tr, err := RefreshAccessToken(ctx, o.httpClient, o.platformURL, rt)
 			if err != nil {
 				return nil, fmt.Errorf("token expired and refresh failed: %w", err)
 			}
@@ -200,7 +200,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		}
 	}
 
-	interceptor := newAutoRefreshInterceptor(o.platformURL, o.accessToken, o.refreshToken, o.clientID, o.clientSecret, onRefresh)
+	interceptor := newAutoRefreshInterceptor(o.platformURL, o.accessToken, o.refreshToken, o.clientID, o.clientSecret, o.httpClient, onRefresh)
 	ics := make([]connect.Interceptor, 0, 1+len(o.extraInterceptors))
 	ics = append(ics, interceptor)
 	ics = append(ics, o.extraInterceptors...)
@@ -320,17 +320,19 @@ type autoRefreshInterceptor struct {
 	refreshToken   string
 	clientID       string
 	clientSecret   string
+	httpClient     connect.HTTPClient
 	onTokenRefresh onTokenRefreshFunc
 	mu             sync.Mutex
 }
 
-func newAutoRefreshInterceptor(platformURL, token, refreshToken, clientID, clientSecret string, onRefresh onTokenRefreshFunc) *autoRefreshInterceptor {
+func newAutoRefreshInterceptor(platformURL, token, refreshToken, clientID, clientSecret string, httpClient connect.HTTPClient, onRefresh onTokenRefreshFunc) *autoRefreshInterceptor {
 	return &autoRefreshInterceptor{
 		platformURL:    platformURL,
 		token:          token,
 		refreshToken:   refreshToken,
 		clientID:       clientID,
 		clientSecret:   clientSecret,
+		httpClient:     httpClient,
 		onTokenRefresh: onRefresh,
 	}
 }
@@ -383,7 +385,7 @@ func (i *autoRefreshInterceptor) doRefresh(ctx context.Context) (string, error) 
 	defer i.mu.Unlock()
 
 	if i.clientID != "" && i.clientSecret != "" {
-		tr, err := FetchClientCredentialsToken(ctx, i.platformURL, i.clientID, i.clientSecret)
+		tr, err := FetchClientCredentialsToken(ctx, i.httpClient, i.platformURL, i.clientID, i.clientSecret)
 		if err != nil {
 			return "", err
 		}
@@ -396,7 +398,7 @@ func (i *autoRefreshInterceptor) doRefresh(ctx context.Context) (string, error) 
 		return i.token, nil
 	}
 
-	tr, err := RefreshAccessToken(ctx, i.platformURL, i.refreshToken)
+	tr, err := RefreshAccessToken(ctx, i.httpClient, i.platformURL, i.refreshToken)
 	if err != nil {
 		return "", err
 	}
