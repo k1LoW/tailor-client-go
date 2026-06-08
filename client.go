@@ -15,12 +15,14 @@ package tailorclient
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	tailorv1 "buf.build/gen/go/tailor-inc/tailor/protocolbuffers/go/tailor/v1"
 	"buf.build/gen/go/tailor-inc/tailor/connectrpc/go/tailor/v1/tailorv1connect"
 	"connectrpc.com/connect"
 )
@@ -173,6 +175,76 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 	}, nil
 }
 
+// DefaultUploadChunkSize is the default chunk size used by UploadFile when
+// UploadFileParams.ChunkSize is not set.
+const DefaultUploadChunkSize = 256 * 1024
+
+// UploadFileParams configures Client.UploadFile.
+type UploadFileParams struct {
+	WorkspaceID  string
+	DeploymentID string
+	FilePath     string
+	ContentType  string
+	// ChunkSize controls the size in bytes of each ChunkData message. When
+	// zero or negative, DefaultUploadChunkSize is used.
+	ChunkSize int
+}
+
+// UploadFile streams r to the Tailor Platform as a single file. It sends one
+// InitialMetadata message followed by ChunkData messages until r returns
+// io.EOF, then closes the stream.
+//
+// This wraps the generated streaming UploadFile RPC so callers do not have to
+// manage the metadata/chunk oneof, the chunk loop, or stream close themselves.
+// The raw stream is still reachable via c.OperatorServiceClient.UploadFile.
+func (c *Client) UploadFile(ctx context.Context, params UploadFileParams, r io.Reader) error {
+	if r == nil {
+		return fmt.Errorf("upload file: reader is nil")
+	}
+	chunkSize := params.ChunkSize
+	if chunkSize <= 0 {
+		chunkSize = DefaultUploadChunkSize
+	}
+
+	stream := c.OperatorServiceClient.UploadFile(ctx)
+
+	meta := &tailorv1.UploadFileRequest{}
+	meta.SetInitialMetadata((&tailorv1.UploadFileRequest_InitialUploadMetadata_builder{
+		WorkspaceId:  params.WorkspaceID,
+		DeploymentId: params.DeploymentID,
+		FilePath:     params.FilePath,
+		ContentType:  params.ContentType,
+	}).Build())
+	if err := stream.Send(meta); err != nil {
+		return fmt.Errorf("upload file: send metadata: %w", err)
+	}
+
+	buf := make([]byte, chunkSize)
+	for {
+		n, readErr := r.Read(buf)
+		if n > 0 {
+			chunk := &tailorv1.UploadFileRequest{}
+			chunkBytes := make([]byte, n)
+			copy(chunkBytes, buf[:n])
+			chunk.SetChunkData(chunkBytes)
+			if sendErr := stream.Send(chunk); sendErr != nil {
+				return fmt.Errorf("upload file: send chunk: %w", sendErr)
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return fmt.Errorf("upload file: read: %w", readErr)
+		}
+	}
+
+	if _, err := stream.CloseAndReceive(); err != nil {
+		return fmt.Errorf("upload file: close: %w", err)
+	}
+	return nil
+}
+
 // PlatformURL returns the configured Tailor Platform endpoint.
 func (c *Client) PlatformURL() string {
 	return c.platformURL
@@ -227,7 +299,14 @@ func (i *autoRefreshInterceptor) WrapUnary(next connect.UnaryFunc) connect.Unary
 }
 
 func (i *autoRefreshInterceptor) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
-	return next
+	return func(ctx context.Context, spec connect.Spec) connect.StreamingClientConn {
+		conn := next(ctx, spec)
+		i.mu.Lock()
+		token := i.token
+		i.mu.Unlock()
+		conn.RequestHeader().Set("Authorization", "Bearer "+token)
+		return conn
+	}
 }
 
 func (i *autoRefreshInterceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {

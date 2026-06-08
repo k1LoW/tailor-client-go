@@ -1,11 +1,16 @@
 package tailorclient
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	tailorv1 "buf.build/gen/go/tailor-inc/tailor/protocolbuffers/go/tailor/v1"
+	"buf.build/gen/go/tailor-inc/tailor/connectrpc/go/tailor/v1/tailorv1connect"
 	"connectrpc.com/connect"
 )
 
@@ -100,6 +105,132 @@ func TestAutoRefreshInterceptor_passesThroughNonAuthErrors(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Errorf("calls = %d, want 1 (no retry for non-auth errors)", calls)
+	}
+}
+
+type fakeStreamingClientConn struct {
+	spec   connect.Spec
+	header http.Header
+}
+
+func (f *fakeStreamingClientConn) Spec() connect.Spec             { return f.spec }
+func (f *fakeStreamingClientConn) Peer() connect.Peer             { return connect.Peer{} }
+func (f *fakeStreamingClientConn) Send(any) error                 { return nil }
+func (f *fakeStreamingClientConn) RequestHeader() http.Header     { return f.header }
+func (f *fakeStreamingClientConn) CloseRequest() error            { return nil }
+func (f *fakeStreamingClientConn) Receive(any) error              { return io.EOF }
+func (f *fakeStreamingClientConn) ResponseHeader() http.Header    { return http.Header{} }
+func (f *fakeStreamingClientConn) ResponseTrailer() http.Header   { return http.Header{} }
+func (f *fakeStreamingClientConn) CloseResponse() error           { return nil }
+
+func TestAutoRefreshInterceptor_attachesBearerOnStreaming(t *testing.T) {
+	i := newAutoRefreshInterceptor("https://example.com", "tok-456", "rt", nil)
+
+	fake := &fakeStreamingClientConn{header: http.Header{}}
+	next := connect.StreamingClientFunc(func(_ context.Context, _ connect.Spec) connect.StreamingClientConn {
+		return fake
+	})
+
+	wrapped := i.WrapStreamingClient(next)
+	_ = wrapped(context.Background(), connect.Spec{})
+	if want, got := "Bearer tok-456", fake.header.Get("Authorization"); got != want {
+		t.Errorf("Authorization = %q, want %q", got, want)
+	}
+}
+
+type fakeOperatorHandler struct {
+	tailorv1connect.UnimplementedOperatorServiceHandler
+	uploadFn func(context.Context, *connect.ClientStream[tailorv1.UploadFileRequest]) (*connect.Response[tailorv1.UploadFileResponse], error)
+}
+
+func (h *fakeOperatorHandler) UploadFile(ctx context.Context, stream *connect.ClientStream[tailorv1.UploadFileRequest]) (*connect.Response[tailorv1.UploadFileResponse], error) {
+	return h.uploadFn(ctx, stream)
+}
+
+func TestClient_UploadFile_sendsMetadataAndChunksWithAuth(t *testing.T) {
+	var (
+		gotAuth     string
+		gotMetadata *tailorv1.UploadFileRequest_InitialUploadMetadata
+		gotPayload  bytes.Buffer
+		gotMsgCount int
+	)
+	handler := &fakeOperatorHandler{
+		uploadFn: func(_ context.Context, stream *connect.ClientStream[tailorv1.UploadFileRequest]) (*connect.Response[tailorv1.UploadFileResponse], error) {
+			gotAuth = stream.RequestHeader().Get("Authorization")
+			for stream.Receive() {
+				gotMsgCount++
+				msg := stream.Msg()
+				switch {
+				case msg.HasInitialMetadata():
+					gotMetadata = msg.GetInitialMetadata()
+				case msg.HasChunkData():
+					gotPayload.Write(msg.GetChunkData())
+				}
+			}
+			if err := stream.Err(); err != nil {
+				return nil, err
+			}
+			return connect.NewResponse(&tailorv1.UploadFileResponse{}), nil
+		},
+	}
+
+	path, h := tailorv1connect.NewOperatorServiceHandler(handler)
+	mux := http.NewServeMux()
+	mux.Handle(path, h)
+	srv := httptest.NewUnstartedServer(mux)
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	defer srv.Close()
+
+	c, err := New(context.Background(),
+		WithTokens("tok-stream", ""),
+		WithPlatformURL(srv.URL),
+		WithHTTPClient(srv.Client()),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	want := bytes.Repeat([]byte("abcdefghij"), 100) // 1000 bytes
+	err = c.UploadFile(context.Background(), UploadFileParams{
+		WorkspaceID:  "ws_xxx",
+		DeploymentID: "dp_xxx",
+		FilePath:     "index.html",
+		ContentType:  "text/html",
+		ChunkSize:    256,
+	}, bytes.NewReader(want))
+	if err != nil {
+		t.Fatalf("UploadFile: %v", err)
+	}
+
+	if want := "Bearer tok-stream"; gotAuth != want {
+		t.Errorf("Authorization = %q, want %q", gotAuth, want)
+	}
+	if gotMetadata == nil {
+		t.Fatal("metadata message was not received")
+	}
+	if gotMetadata.GetWorkspaceId() != "ws_xxx" ||
+		gotMetadata.GetDeploymentId() != "dp_xxx" ||
+		gotMetadata.GetFilePath() != "index.html" ||
+		gotMetadata.GetContentType() != "text/html" {
+		t.Errorf("unexpected metadata: %+v", gotMetadata)
+	}
+	if !bytes.Equal(gotPayload.Bytes(), want) {
+		t.Errorf("payload mismatch: got %d bytes, want %d bytes", gotPayload.Len(), len(want))
+	}
+	// 1 metadata + ceil(1000/256) = 1 + 4 = 5 messages.
+	if gotMsgCount != 5 {
+		t.Errorf("message count = %d, want 5", gotMsgCount)
+	}
+}
+
+func TestClient_UploadFile_nilReader(t *testing.T) {
+	c, err := New(context.Background(), WithTokens("at", "rt"))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if err := c.UploadFile(context.Background(), UploadFileParams{}, nil); err == nil {
+		t.Fatal("expected error for nil reader")
 	}
 }
 
