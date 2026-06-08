@@ -65,6 +65,9 @@ func TestResolveAuthURL(t *testing.T) {
 		{"prod platform", "https://api.tailor.tech", defaultAuthURL},
 		{"other URL", "https://custom.example.com", "https://custom.example.com/oauth2/platform"},
 		{"empty falls back to prod", "", defaultAuthURL},
+		{"trailing slash on prod", "https://api.tailor.tech/", defaultAuthURL},
+		{"trailing slash on dev", devPlatformURL + "/", devPlatformURL + "/oauth2/platform"},
+		{"trailing slash on custom", "https://custom.example.com/", "https://custom.example.com/oauth2/platform"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -169,6 +172,8 @@ func TestResolveClientID(t *testing.T) {
 		{"prod platform", "https://api.tailor.tech", prodClientID},
 		{"empty falls back to prod", "", prodClientID},
 		{"other URL returns empty (caller must use WithClientCredentials)", "https://custom.example.com", ""},
+		{"trailing slash on prod still matches", "https://api.tailor.tech/", prodClientID},
+		{"trailing slash on dev still matches", devPlatformURL + "/", devClientID},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

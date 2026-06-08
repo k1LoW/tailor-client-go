@@ -131,6 +131,7 @@ func truncate(s string, n int) string {
 }
 
 func resolveAuthURL(platformURL string) string {
+	platformURL = normalizePlatformURL(platformURL)
 	if platformURL == "" {
 		return defaultAuthURL
 	}
@@ -142,7 +143,7 @@ func resolveAuthURL(platformURL string) string {
 // RefreshAccessToken can surface an explicit error rather than silently
 // posting the production tenant's client_id to a third-party endpoint.
 func resolveClientID(platformURL string) string {
-	switch platformURL {
+	switch normalizePlatformURL(platformURL) {
 	case "", DefaultPlatformURL:
 		return prodClientID
 	case devPlatformURL:
@@ -150,4 +151,12 @@ func resolveClientID(platformURL string) string {
 	default:
 		return ""
 	}
+}
+
+// normalizePlatformURL strips a trailing slash so that URL concatenation in
+// resolveAuthURL and the exact-match switch in resolveClientID behave
+// predictably when callers pass a config-style value such as
+// "https://api.tailor.tech/".
+func normalizePlatformURL(platformURL string) string {
+	return strings.TrimRight(platformURL, "/")
 }
