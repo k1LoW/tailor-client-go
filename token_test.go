@@ -1,6 +1,10 @@
 package tailorclient
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 )
@@ -59,7 +63,8 @@ func TestResolveAuthURL(t *testing.T) {
 	}{
 		{"dev platform", devPlatformURL, devPlatformURL + "/oauth2/platform"},
 		{"prod platform", "https://api.tailor.tech", defaultAuthURL},
-		{"other URL", "https://custom.example.com", defaultAuthURL},
+		{"other URL", "https://custom.example.com", "https://custom.example.com/oauth2/platform"},
+		{"empty falls back to prod", "", defaultAuthURL},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -68,6 +73,82 @@ func TestResolveAuthURL(t *testing.T) {
 				t.Errorf("resolveAuthURL(%q) = %q, want %q", tt.platformURL, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestFetchClientCredentialsToken_success(t *testing.T) {
+	var (
+		gotMethod      string
+		gotPath        string
+		gotContentType string
+		gotForm        url.Values
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotContentType = r.Header.Get("Content-Type")
+		if err := r.ParseForm(); err != nil {
+			t.Fatalf("ParseForm: %v", err)
+		}
+		gotForm = r.PostForm
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"token_type":   "Bearer",
+			"access_token": "mu-access",
+			"expires_in":   3600,
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	tr, err := FetchClientCredentialsToken(srv.URL, "cid", "csecret")
+	if err != nil {
+		t.Fatalf("FetchClientCredentialsToken: %v", err)
+	}
+
+	if tr.AccessToken != "mu-access" {
+		t.Errorf("AccessToken = %q, want mu-access", tr.AccessToken)
+	}
+	if tr.ExpiresIn != 3600 {
+		t.Errorf("ExpiresIn = %d, want 3600", tr.ExpiresIn)
+	}
+	if tr.RefreshToken != "" {
+		t.Errorf("RefreshToken = %q, want empty (client_credentials does not issue one)", tr.RefreshToken)
+	}
+	if gotMethod != http.MethodPost {
+		t.Errorf("method = %q, want POST", gotMethod)
+	}
+	if gotPath != "/oauth2/platform/token" {
+		t.Errorf("path = %q, want /oauth2/platform/token", gotPath)
+	}
+	if gotContentType != "application/x-www-form-urlencoded" {
+		t.Errorf("Content-Type = %q, want application/x-www-form-urlencoded", gotContentType)
+	}
+	if gotForm.Get("grant_type") != "client_credentials" {
+		t.Errorf("grant_type = %q, want client_credentials", gotForm.Get("grant_type"))
+	}
+	if gotForm.Get("client_id") != "cid" {
+		t.Errorf("client_id = %q, want cid", gotForm.Get("client_id"))
+	}
+	if gotForm.Get("client_secret") != "csecret" {
+		t.Errorf("client_secret = %q, want csecret", gotForm.Get("client_secret"))
+	}
+}
+
+func TestFetchClientCredentialsToken_error(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		if err := json.NewEncoder(w).Encode(map[string]any{"error": "invalid_client"}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	_, err := FetchClientCredentialsToken(srv.URL, "cid", "bad")
+	if err == nil {
+		t.Fatal("expected error for invalid_client response")
 	}
 }
 

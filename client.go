@@ -46,6 +46,8 @@ type options struct {
 	platformURL       string
 	accessToken       string
 	refreshToken      string
+	clientID          string
+	clientSecret      string
 	tokensProvided    bool
 	persistTokens     bool
 	httpClient        connect.HTTPClient
@@ -98,12 +100,34 @@ func WithTokenPersist() Option {
 	}
 }
 
+// WithClientCredentials configures OAuth2 client_credentials grant
+// authentication using a platform machine user. New() will fetch an access
+// token at construction time, and the interceptor re-fetches with the same
+// credentials whenever the token is rejected as Unauthenticated (machine
+// user grants do not issue refresh tokens, so the helper holds on to the
+// client_id/client_secret rather than a refresh_token).
+//
+// Mutually exclusive with WithTokens and WithTokenPersist.
+func WithClientCredentials(clientID, clientSecret string) Option { //nostyle:repetition
+	return func(o *options) {
+		o.clientID = clientID
+		o.clientSecret = clientSecret
+	}
+}
+
 // New builds an authenticated client.
 //
-// Without WithTokens, New reads the current user's tokens from the Tailor SDK
-// config and proactively refreshes them if expired. Token refresh on
-// unauthenticated RPC errors is always enabled; SDK config writeback is
-// opt-in via WithTokenPersist.
+// Authentication source is determined by which options are supplied:
+//   - WithClientCredentials: fetch an access token via the OAuth2
+//     client_credentials grant using a platform machine user.
+//   - WithTokens: use the supplied access/refresh tokens directly.
+//   - Otherwise: read the current user's tokens from the Tailor SDK config,
+//     and proactively refresh them if expired.
+//
+// Token refresh on unauthenticated unary RPCs is always enabled (using the
+// refresh_token for SDK-config / WithTokens flows, or re-fetching with the
+// stored client_credentials for machine-user flows). SDK config writeback is
+// opt-in via WithTokenPersist and only applies to refresh_token flows.
 func New(ctx context.Context, opts ...Option) (*Client, error) {
 	o := &options{
 		platformURL: DefaultPlatformURL,
@@ -112,7 +136,25 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		opt(o)
 	}
 
-	if !o.tokensProvided {
+	switch {
+	case o.clientID != "" || o.clientSecret != "":
+		if o.clientID == "" || o.clientSecret == "" {
+			return nil, fmt.Errorf("client_credentials option requires both clientID and clientSecret")
+		}
+		if o.tokensProvided {
+			return nil, fmt.Errorf("client_credentials option cannot be combined with WithTokens")
+		}
+		if o.persistTokens {
+			return nil, fmt.Errorf("client_credentials option cannot be combined with WithTokenPersist")
+		}
+		tr, err := FetchClientCredentialsToken(o.platformURL, o.clientID, o.clientSecret)
+		if err != nil {
+			return nil, fmt.Errorf("fetch client_credentials token: %w", err)
+		}
+		o.accessToken = tr.AccessToken
+		o.refreshToken = ""
+
+	case !o.tokensProvided:
 		at, rt, expiresAt, err := ReadSDKTokens()
 		if err != nil {
 			return nil, fmt.Errorf("read SDK tokens: %w", err)
@@ -156,7 +198,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		}
 	}
 
-	interceptor := newAutoRefreshInterceptor(o.platformURL, o.accessToken, o.refreshToken, onRefresh)
+	interceptor := newAutoRefreshInterceptor(o.platformURL, o.accessToken, o.refreshToken, o.clientID, o.clientSecret, onRefresh)
 	ics := make([]connect.Interceptor, 0, 1+len(o.extraInterceptors))
 	ics = append(ics, interceptor)
 	ics = append(ics, o.extraInterceptors...)
@@ -275,15 +317,19 @@ type autoRefreshInterceptor struct {
 	platformURL    string
 	token          string
 	refreshToken   string
+	clientID       string
+	clientSecret   string
 	onTokenRefresh onTokenRefreshFunc
 	mu             sync.Mutex
 }
 
-func newAutoRefreshInterceptor(platformURL, token, refreshToken string, onRefresh onTokenRefreshFunc) *autoRefreshInterceptor {
+func newAutoRefreshInterceptor(platformURL, token, refreshToken, clientID, clientSecret string, onRefresh onTokenRefreshFunc) *autoRefreshInterceptor {
 	return &autoRefreshInterceptor{
 		platformURL:    platformURL,
 		token:          token,
 		refreshToken:   refreshToken,
+		clientID:       clientID,
+		clientSecret:   clientSecret,
 		onTokenRefresh: onRefresh,
 	}
 }
@@ -297,8 +343,8 @@ func (i *autoRefreshInterceptor) WrapUnary(next connect.UnaryFunc) connect.Unary
 		req.Header().Set("Authorization", "Bearer "+token)
 		resp, err := next(ctx, req)
 		if err != nil && i.isUnauthenticated(err) {
-			if i.refreshToken == "" {
-				return nil, fmt.Errorf("%w (no refresh token available)", err)
+			if !i.canRefresh() {
+				return nil, fmt.Errorf("%w (no refresh credentials available)", err)
 			}
 			slog.Info("Token rejected, attempting refresh")
 			newToken, refreshErr := i.doRefresh()
@@ -327,9 +373,27 @@ func (i *autoRefreshInterceptor) WrapStreamingHandler(next connect.StreamingHand
 	return next
 }
 
+func (i *autoRefreshInterceptor) canRefresh() bool {
+	return i.refreshToken != "" || (i.clientID != "" && i.clientSecret != "")
+}
+
 func (i *autoRefreshInterceptor) doRefresh() (string, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+
+	if i.clientID != "" && i.clientSecret != "" {
+		tr, err := FetchClientCredentialsToken(i.platformURL, i.clientID, i.clientSecret)
+		if err != nil {
+			return "", err
+		}
+		i.token = tr.AccessToken
+		slog.Info("Access token re-fetched via client_credentials")
+		if i.onTokenRefresh != nil {
+			expiresAt := time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second).UTC().Format(time.RFC3339)
+			i.onTokenRefresh(tr.AccessToken, "", expiresAt)
+		}
+		return i.token, nil
+	}
 
 	tr, err := RefreshAccessToken(i.platformURL, i.refreshToken)
 	if err != nil {

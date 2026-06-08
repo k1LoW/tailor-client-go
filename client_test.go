@@ -3,6 +3,7 @@ package tailorclient
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -52,7 +53,7 @@ func TestNew_withPlatformURL(t *testing.T) {
 }
 
 func TestAutoRefreshInterceptor_attachesBearer(t *testing.T) {
-	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "rt", nil)
+	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "rt", "", "", nil)
 
 	var gotAuth string
 	next := connect.UnaryFunc(func(_ context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
@@ -71,7 +72,7 @@ func TestAutoRefreshInterceptor_attachesBearer(t *testing.T) {
 }
 
 func TestAutoRefreshInterceptor_unauthenticatedWithoutRefreshToken(t *testing.T) {
-	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "", nil)
+	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "", "", "", nil)
 
 	authErr := errors.New("unauthenticated")
 	next := connect.UnaryFunc(func(_ context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
@@ -89,7 +90,7 @@ func TestAutoRefreshInterceptor_unauthenticatedWithoutRefreshToken(t *testing.T)
 }
 
 func TestAutoRefreshInterceptor_passesThroughNonAuthErrors(t *testing.T) {
-	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "rt", nil)
+	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "rt", "", "", nil)
 
 	otherErr := errors.New("not found")
 	calls := 0
@@ -124,7 +125,7 @@ func (f *fakeStreamingClientConn) ResponseTrailer() http.Header   { return http.
 func (f *fakeStreamingClientConn) CloseResponse() error           { return nil }
 
 func TestAutoRefreshInterceptor_attachesBearerOnStreaming(t *testing.T) {
-	i := newAutoRefreshInterceptor("https://example.com", "tok-456", "rt", nil)
+	i := newAutoRefreshInterceptor("https://example.com", "tok-456", "rt", "", "", nil)
 
 	fake := &fakeStreamingClientConn{header: http.Header{}}
 	next := connect.StreamingClientFunc(func(_ context.Context, _ connect.Spec) connect.StreamingClientConn {
@@ -231,6 +232,118 @@ func TestClient_UploadFileFromReader_nilReader(t *testing.T) {
 	}
 	if err := c.UploadFileFromReader(context.Background(), UploadFileParams{}, nil); err == nil {
 		t.Fatal("expected error for nil reader")
+	}
+}
+
+func TestNew_clientCredentials_happyPath(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/oauth2/platform/token" {
+			t.Errorf("token endpoint path = %q, want /oauth2/platform/token", r.URL.Path)
+		}
+		hits++
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"token_type":   "Bearer",
+			"access_token": "mu-access",
+			"expires_in":   3600,
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	}))
+	defer srv.Close()
+
+	c, err := New(context.Background(),
+		WithPlatformURL(srv.URL),
+		WithClientCredentials("cid", "csecret"),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if hits != 1 {
+		t.Errorf("token endpoint hit %d times, want 1", hits)
+	}
+	if c.PlatformURL() != srv.URL {
+		t.Errorf("PlatformURL = %q, want %q", c.PlatformURL(), srv.URL)
+	}
+}
+
+func TestNew_clientCredentials_exclusiveWithTokens(t *testing.T) {
+	_, err := New(context.Background(),
+		WithTokens("at", "rt"),
+		WithClientCredentials("cid", "csecret"),
+	)
+	if err == nil {
+		t.Fatal("expected error when WithClientCredentials is combined with WithTokens")
+	}
+}
+
+func TestNew_clientCredentials_exclusiveWithTokenPersist(t *testing.T) {
+	_, err := New(context.Background(),
+		WithClientCredentials("cid", "csecret"),
+		WithTokenPersist(),
+	)
+	if err == nil {
+		t.Fatal("expected error when WithClientCredentials is combined with WithTokenPersist")
+	}
+}
+
+func TestNew_clientCredentials_partialOptions(t *testing.T) {
+	_, err := New(context.Background(),
+		WithClientCredentials("cid", ""),
+	)
+	if err == nil {
+		t.Fatal("expected error when clientSecret is empty")
+	}
+}
+
+func TestAutoRefreshInterceptor_clientCredentialsReFetch(t *testing.T) {
+	var tokenHits int
+	tokenSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		tokenHits++
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{
+			"token_type":   "Bearer",
+			"access_token": "new-tok",
+			"expires_in":   3600,
+		}); err != nil {
+			t.Errorf("encode response: %v", err)
+		}
+	}))
+	defer tokenSrv.Close()
+
+	i := newAutoRefreshInterceptor(tokenSrv.URL, "old-token", "", "cid", "csecret", nil)
+
+	if !i.canRefresh() {
+		t.Fatal("canRefresh should be true with client credentials")
+	}
+
+	authErr := errors.New("unauthenticated")
+	var headers []string
+	next := connect.UnaryFunc(func(_ context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+		headers = append(headers, req.Header().Get("Authorization"))
+		if len(headers) == 1 {
+			return nil, authErr
+		}
+		return connect.NewResponse(&tailorv1.PingResponse{}), nil
+	})
+
+	wrapped := i.WrapUnary(next)
+	_, err := wrapped(context.Background(), connect.NewRequest(&tailorv1.PingRequest{}))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tokenHits != 1 {
+		t.Errorf("token endpoint hit %d times, want 1", tokenHits)
+	}
+	if len(headers) != 2 {
+		t.Fatalf("expected 2 RPC calls (initial + retry), got %d", len(headers))
+	}
+	if headers[0] != "Bearer old-token" {
+		t.Errorf("first header = %q, want Bearer old-token", headers[0])
+	}
+	if headers[1] != "Bearer new-tok" {
+		t.Errorf("retry header = %q, want Bearer new-tok", headers[1])
 	}
 }
 
