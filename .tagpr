@@ -1,7 +1,6 @@
 [tagpr]
 	vPrefix = true
 	releaseBranch = main
-	release = draft
 	command = "make prerelease_for_tagpr"
 	majorLabels = "tagpr:major"
 	minorLabels = "tagpr:minor"
