@@ -147,7 +147,7 @@ func (h *fakeOperatorHandler) UploadFile(ctx context.Context, stream *connect.Cl
 	return h.uploadFn(ctx, stream)
 }
 
-func TestClient_UploadFile_sendsMetadataAndChunksWithAuth(t *testing.T) {
+func TestClient_UploadFileFromReader_sendsMetadataAndChunksWithAuth(t *testing.T) {
 	var (
 		gotAuth     string
 		gotMetadata *tailorv1.UploadFileRequest_InitialUploadMetadata
@@ -192,7 +192,7 @@ func TestClient_UploadFile_sendsMetadataAndChunksWithAuth(t *testing.T) {
 	}
 
 	want := bytes.Repeat([]byte("abcdefghij"), 100) // 1000 bytes
-	err = c.UploadFile(context.Background(), UploadFileParams{
+	err = c.UploadFileFromReader(context.Background(), UploadFileParams{
 		WorkspaceID:  "ws_xxx",
 		DeploymentID: "dp_xxx",
 		FilePath:     "index.html",
@@ -200,7 +200,7 @@ func TestClient_UploadFile_sendsMetadataAndChunksWithAuth(t *testing.T) {
 		ChunkSize:    256,
 	}, bytes.NewReader(want))
 	if err != nil {
-		t.Fatalf("UploadFile: %v", err)
+		t.Fatalf("UploadFileFromReader: %v", err)
 	}
 
 	if want := "Bearer tok-stream"; gotAuth != want {
@@ -224,12 +224,12 @@ func TestClient_UploadFile_sendsMetadataAndChunksWithAuth(t *testing.T) {
 	}
 }
 
-func TestClient_UploadFile_nilReader(t *testing.T) {
+func TestClient_UploadFileFromReader_nilReader(t *testing.T) {
 	c, err := New(context.Background(), WithTokens("at", "rt"))
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if err := c.UploadFile(context.Background(), UploadFileParams{}, nil); err == nil {
+	if err := c.UploadFileFromReader(context.Background(), UploadFileParams{}, nil); err == nil {
 		t.Fatal("expected error for nil reader")
 	}
 }

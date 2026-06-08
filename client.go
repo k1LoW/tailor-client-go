@@ -175,11 +175,11 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 	}, nil
 }
 
-// DefaultUploadChunkSize is the default chunk size used by UploadFile when
-// UploadFileParams.ChunkSize is not set.
+// DefaultUploadChunkSize is the default chunk size used by
+// Client.UploadFileFromReader when UploadFileParams.ChunkSize is not set.
 const DefaultUploadChunkSize = 256 * 1024
 
-// UploadFileParams configures Client.UploadFile.
+// UploadFileParams configures Client.UploadFileFromReader.
 type UploadFileParams struct {
 	WorkspaceID  string
 	DeploymentID string
@@ -190,14 +190,14 @@ type UploadFileParams struct {
 	ChunkSize int
 }
 
-// UploadFile streams r to the Tailor Platform as a single file. It sends one
-// InitialMetadata message followed by ChunkData messages until r returns
-// io.EOF, then closes the stream.
+// UploadFileFromReader streams r to the Tailor Platform as a single file. It
+// sends one InitialMetadata message followed by ChunkData messages until r
+// returns io.EOF, then closes the stream.
 //
 // This wraps the generated streaming UploadFile RPC so callers do not have to
 // manage the metadata/chunk oneof, the chunk loop, or stream close themselves.
-// The raw stream is still reachable via c.OperatorServiceClient.UploadFile.
-func (c *Client) UploadFile(ctx context.Context, params UploadFileParams, r io.Reader) error {
+// The raw streaming RPC is still reachable as c.OperatorServiceClient.UploadFile.
+func (c *Client) UploadFileFromReader(ctx context.Context, params UploadFileParams, r io.Reader) error {
 	if r == nil {
 		return fmt.Errorf("upload file: reader is nil")
 	}
@@ -206,7 +206,7 @@ func (c *Client) UploadFile(ctx context.Context, params UploadFileParams, r io.R
 		chunkSize = DefaultUploadChunkSize
 	}
 
-	stream := c.OperatorServiceClient.UploadFile(ctx)
+	stream := c.UploadFile(ctx)
 
 	meta := &tailorv1.UploadFileRequest{}
 	meta.SetInitialMetadata((&tailorv1.UploadFileRequest_InitialUploadMetadata_builder{
@@ -247,7 +247,7 @@ func (c *Client) UploadFile(ctx context.Context, params UploadFileParams, r io.R
 			// Close the stream so the server does not sit waiting for
 			// more chunks after we abandon the upload.
 			if _, closeErr := stream.CloseAndReceive(); closeErr != nil {
-				slog.Warn("UploadFile: stream close after read error failed", "error", closeErr)
+				slog.Warn("UploadFileFromReader: stream close after read error failed", "error", closeErr)
 			}
 			return fmt.Errorf("upload file: read: %w", readErr)
 		}
