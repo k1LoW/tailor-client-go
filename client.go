@@ -216,6 +216,12 @@ func (c *Client) UploadFile(ctx context.Context, params UploadFileParams, r io.R
 		ContentType:  params.ContentType,
 	}).Build())
 	if err := stream.Send(meta); err != nil {
+		// Per connect-go's client-streaming contract, a server-side error
+		// during Send is surfaced as an io.EOF-wrapped sentinel; the real
+		// RPC error is only retrievable via CloseAndReceive.
+		if _, closeErr := stream.CloseAndReceive(); closeErr != nil {
+			return fmt.Errorf("upload file: send metadata: %w", closeErr)
+		}
 		return fmt.Errorf("upload file: send metadata: %w", err)
 	}
 
@@ -228,6 +234,9 @@ func (c *Client) UploadFile(ctx context.Context, params UploadFileParams, r io.R
 			copy(chunkBytes, buf[:n])
 			chunk.SetChunkData(chunkBytes)
 			if sendErr := stream.Send(chunk); sendErr != nil {
+				if _, closeErr := stream.CloseAndReceive(); closeErr != nil {
+					return fmt.Errorf("upload file: send chunk: %w", closeErr)
+				}
 				return fmt.Errorf("upload file: send chunk: %w", sendErr)
 			}
 		}
@@ -235,6 +244,11 @@ func (c *Client) UploadFile(ctx context.Context, params UploadFileParams, r io.R
 			break
 		}
 		if readErr != nil {
+			// Close the stream so the server does not sit waiting for
+			// more chunks after we abandon the upload.
+			if _, closeErr := stream.CloseAndReceive(); closeErr != nil {
+				slog.Warn("UploadFile: stream close after read error failed", "error", closeErr)
+			}
 			return fmt.Errorf("upload file: read: %w", readErr)
 		}
 	}
