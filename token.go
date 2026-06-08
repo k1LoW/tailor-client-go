@@ -1,6 +1,7 @@
 package tailorclient
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,7 +28,10 @@ type TokenResponse struct {
 }
 
 // RefreshAccessToken exchanges a refresh_token for a new access_token.
-func RefreshAccessToken(platformURL, refreshToken string) (*TokenResponse, error) {
+//
+// ctx is propagated to the underlying HTTP request so callers can apply
+// deadlines and cancellation to the token round-trip.
+func RefreshAccessToken(ctx context.Context, platformURL, refreshToken string) (*TokenResponse, error) {
 	authURL := resolveAuthURL(platformURL)
 	clientID := resolveClientID(platformURL)
 	if clientID == "" {
@@ -42,7 +46,7 @@ func RefreshAccessToken(platformURL, refreshToken string) (*TokenResponse, error
 	form.Set("client_id", clientID)
 	form.Set("refresh_token", refreshToken)
 
-	resp, err := http.Post(tokenEndpoint, "application/x-www-form-urlencoded", strings.NewReader(form.Encode())) //nolint:gosec // Token endpoint URL is constructed from known platform URL
+	resp, err := postForm(ctx, tokenEndpoint, form)
 	if err != nil {
 		return nil, fmt.Errorf("refresh token request: %w", err)
 	}
@@ -71,10 +75,13 @@ func RefreshAccessToken(platformURL, refreshToken string) (*TokenResponse, error
 // client_credentials grant using a platform machine user's clientID and
 // clientSecret.
 //
+// ctx is propagated to the underlying HTTP request so callers can apply
+// deadlines and cancellation to the token round-trip.
+//
 // Unlike RefreshAccessToken, the response does not carry a refresh_token —
 // machine user tokens are short-lived and re-fetched with the same
 // credentials when they expire or are rejected.
-func FetchClientCredentialsToken(platformURL, clientID, clientSecret string) (*TokenResponse, error) { //nostyle:repetition
+func FetchClientCredentialsToken(ctx context.Context, platformURL, clientID, clientSecret string) (*TokenResponse, error) { //nostyle:repetition
 	tokenEndpoint := resolveAuthURL(platformURL) + "/token"
 
 	slog.Info("Fetching client_credentials access token", "endpoint", tokenEndpoint, "clientId", clientID)
@@ -84,7 +91,7 @@ func FetchClientCredentialsToken(platformURL, clientID, clientSecret string) (*T
 	form.Set("client_id", clientID)
 	form.Set("client_secret", clientSecret)
 
-	resp, err := http.Post(tokenEndpoint, "application/x-www-form-urlencoded", strings.NewReader(form.Encode())) //nolint:gosec // Token endpoint URL is constructed from known platform URL
+	resp, err := postForm(ctx, tokenEndpoint, form)
 	if err != nil {
 		return nil, fmt.Errorf("client_credentials request: %w", err)
 	}
@@ -121,6 +128,20 @@ func IsTokenExpired(expiresAt string) bool {
 		}
 	}
 	return time.Now().After(t)
+}
+
+// postForm issues a context-aware application/x-www-form-urlencoded POST.
+//
+// The gosec suppression is intentional: tokenEndpoint is built from a
+// caller-supplied platformURL (config-level trust, not external untrusted
+// input), so flagging it as taint adds no signal here.
+func postForm(ctx context.Context, tokenEndpoint string, form url.Values) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenEndpoint, strings.NewReader(form.Encode())) //nolint:gosec // Token endpoint is built from caller-supplied platformURL; trust boundary is the library caller's configuration
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return http.DefaultClient.Do(req)
 }
 
 func truncate(s string, n int) string {

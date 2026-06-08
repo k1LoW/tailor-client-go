@@ -1,6 +1,7 @@
 package tailorclient
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -80,7 +81,7 @@ func TestResolveAuthURL(t *testing.T) {
 }
 
 func TestRefreshAccessToken_unknownPlatformRejected(t *testing.T) {
-	_, err := RefreshAccessToken("https://self-hosted.example.com", "rt-xxx")
+	_, err := RefreshAccessToken(context.Background(), "https://self-hosted.example.com", "rt-xxx")
 	if err == nil {
 		t.Fatal("expected error when refreshing against an unknown platform URL")
 	}
@@ -112,7 +113,7 @@ func TestFetchClientCredentialsToken_success(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	tr, err := FetchClientCredentialsToken(srv.URL, "cid", "csecret")
+	tr, err := FetchClientCredentialsToken(context.Background(), srv.URL, "cid", "csecret")
 	if err != nil {
 		t.Fatalf("FetchClientCredentialsToken: %v", err)
 	}
@@ -156,9 +157,25 @@ func TestFetchClientCredentialsToken_error(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := FetchClientCredentialsToken(srv.URL, "cid", "bad")
+	_, err := FetchClientCredentialsToken(context.Background(), srv.URL, "cid", "bad")
 	if err == nil {
 		t.Fatal("expected error for invalid_client response")
+	}
+}
+
+func TestFetchClientCredentialsToken_contextCancellation(t *testing.T) {
+	// Handler intentionally never responds; the request must abort because
+	// the context is already canceled at call time.
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := FetchClientCredentialsToken(ctx, srv.URL, "cid", "csecret")
+	if err == nil {
+		t.Fatal("expected error when context is already canceled")
 	}
 }
 

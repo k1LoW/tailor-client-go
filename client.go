@@ -149,7 +149,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		if o.persistTokens {
 			return nil, fmt.Errorf("client_credentials option cannot be combined with WithTokenPersist")
 		}
-		tr, err := FetchClientCredentialsToken(o.platformURL, o.clientID, o.clientSecret)
+		tr, err := FetchClientCredentialsToken(ctx, o.platformURL, o.clientID, o.clientSecret)
 		if err != nil {
 			return nil, fmt.Errorf("fetch client_credentials token: %w", err)
 		}
@@ -166,7 +166,7 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 
 		if IsTokenExpired(expiresAt) && rt != "" {
 			slog.Info("SDK config token is expired, refreshing proactively")
-			tr, err := RefreshAccessToken(o.platformURL, rt)
+			tr, err := RefreshAccessToken(ctx, o.platformURL, rt)
 			if err != nil {
 				return nil, fmt.Errorf("token expired and refresh failed: %w", err)
 			}
@@ -211,7 +211,6 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		connect.WithInterceptors(ics...),
 	)
 
-	_ = ctx
 	return &Client{
 		OperatorServiceClient: op,
 		httpClient:            o.httpClient,
@@ -349,7 +348,7 @@ func (i *autoRefreshInterceptor) WrapUnary(next connect.UnaryFunc) connect.Unary
 				return nil, fmt.Errorf("%w (no refresh credentials available)", err)
 			}
 			slog.Info("Token rejected, attempting refresh")
-			newToken, refreshErr := i.doRefresh()
+			newToken, refreshErr := i.doRefresh(ctx)
 			if refreshErr != nil {
 				return nil, fmt.Errorf("%w (token refresh also failed: %w)", err, refreshErr)
 			}
@@ -379,12 +378,12 @@ func (i *autoRefreshInterceptor) canRefresh() bool {
 	return i.refreshToken != "" || (i.clientID != "" && i.clientSecret != "")
 }
 
-func (i *autoRefreshInterceptor) doRefresh() (string, error) {
+func (i *autoRefreshInterceptor) doRefresh(ctx context.Context) (string, error) {
 	i.mu.Lock()
 	defer i.mu.Unlock()
 
 	if i.clientID != "" && i.clientSecret != "" {
-		tr, err := FetchClientCredentialsToken(i.platformURL, i.clientID, i.clientSecret)
+		tr, err := FetchClientCredentialsToken(ctx, i.platformURL, i.clientID, i.clientSecret)
 		if err != nil {
 			return "", err
 		}
@@ -397,7 +396,7 @@ func (i *autoRefreshInterceptor) doRefresh() (string, error) {
 		return i.token, nil
 	}
 
-	tr, err := RefreshAccessToken(i.platformURL, i.refreshToken)
+	tr, err := RefreshAccessToken(ctx, i.platformURL, i.refreshToken)
 	if err != nil {
 		return "", err
 	}
