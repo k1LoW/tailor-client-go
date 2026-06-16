@@ -1,5 +1,11 @@
 # Changelog
 
+## [v0.3.1](https://github.com/k1LoW/tailor-client-go/compare/v0.3.0...v0.3.1) - 2026-06-16
+
+### Dependency Updates ⬆️
+- chore(deps): bump the dependencies group with 2 updates by @dependabot[bot] in https://github.com/k1LoW/tailor-client-go/pull/9
+- chore(deps): bump the dependencies group with 2 updates by @dependabot[bot] in https://github.com/k1LoW/tailor-client-go/pull/11
+
 ## [v0.3.0](https://github.com/k1LoW/tailor-client-go/compare/v0.2.0...v0.3.0) - 2026-06-08
 
 ### New Features 🎉
