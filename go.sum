@@ -1,9 +1,9 @@
 buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20250717185734-6c6e0d3c608e.1 h1:w2FnA+sUwLAm3VAF2Ed4e0SlTddb28TIKSov6UBCq1c=
 buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.11-20250717185734-6c6e0d3c608e.1/go.mod h1:tvtbpgaVXZX4g6Pn+AnzFycuRK3MOz5HJfEGeEllXYM=
-buf.build/gen/go/tailor-inc/tailor/connectrpc/go v1.20.0-20260707035707-7d146e5779fa.1 h1:GmRqwJH4SS5msZtAPPsMv8OrhhKBtF5d8iUtJgU68sU=
-buf.build/gen/go/tailor-inc/tailor/connectrpc/go v1.20.0-20260707035707-7d146e5779fa.1/go.mod h1:tScJiRYKhWUMGT8AVQNVv5MbvPPlHpy2pZQBHXz9OaM=
-buf.build/gen/go/tailor-inc/tailor/protocolbuffers/go v1.36.11-20260707035707-7d146e5779fa.1 h1:EbLWUNSiWoGrHVg28V7E9SStUoyNlVzhQVbuq6FNlzA=
-buf.build/gen/go/tailor-inc/tailor/protocolbuffers/go v1.36.11-20260707035707-7d146e5779fa.1/go.mod h1:GL71deI8cQ8FZWLteqqpun9uB7ePxYUE/mTPpFDErx8=
+buf.build/gen/go/tailor-inc/tailor/connectrpc/go v1.20.0-20260727070704-011d1d5885e9.1 h1:Tia8K4MGl84kThZPu1j+b8yzP6izqSjmTS17/RmyRLI=
+buf.build/gen/go/tailor-inc/tailor/connectrpc/go v1.20.0-20260727070704-011d1d5885e9.1/go.mod h1:/UepICS3RzcMnl9kiPkcUCG/Ft8uXcIxSVDxD1WlfqQ=
+buf.build/gen/go/tailor-inc/tailor/protocolbuffers/go v1.36.11-20260727070704-011d1d5885e9.1 h1:C9Gz6pDvxC6ricobMrTWIky6l7hw63uZxf20iEsCUlo=
+buf.build/gen/go/tailor-inc/tailor/protocolbuffers/go v1.36.11-20260727070704-011d1d5885e9.1/go.mod h1:GL71deI8cQ8FZWLteqqpun9uB7ePxYUE/mTPpFDErx8=
 connectrpc.com/connect v1.20.0 h1:6TNDAB+WeNd2uolWNlYczB5E0KNNaVMNUEx8JEUsPmQ=
 connectrpc.com/connect v1.20.0/go.mod h1:A2ygJrukXwWy32vkCAAHNVguZrqZ+jeZ9rGRnGR4dN4=
 github.com/danieljoos/wincred v1.2.3 h1:v7dZC2x32Ut3nEfRH+vhoZGvN72+dQ/snVXo/vMFLdQ=
