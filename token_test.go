@@ -39,12 +39,12 @@ func TestResolveAuthURL(t *testing.T) {
 		platformURL string
 		want        string
 	}{
-		{"dev platform", devPlatformURL, devPlatformURL + "/oauth2/platform"},
+		{"dev platform", "https://api.dev.tailor.tech", "https://api.dev.tailor.tech/oauth2/platform"},
 		{"prod platform", "https://api.tailor.tech", defaultAuthURL},
 		{"other URL", "https://custom.example.com", "https://custom.example.com/oauth2/platform"},
 		{"empty falls back to prod", "", defaultAuthURL},
 		{"trailing slash on prod", "https://api.tailor.tech/", defaultAuthURL},
-		{"trailing slash on dev", devPlatformURL + "/", devPlatformURL + "/oauth2/platform"},
+		{"trailing slash on dev", "https://api.dev.tailor.tech/", "https://api.dev.tailor.tech/oauth2/platform"},
 		{"trailing slash on custom", "https://custom.example.com/", "https://custom.example.com/oauth2/platform"},
 	}
 	for _, tt := range tests {
@@ -57,10 +57,65 @@ func TestResolveAuthURL(t *testing.T) {
 	}
 }
 
-func TestRefreshAccessToken_unknownPlatformRejected(t *testing.T) {
-	_, err := RefreshAccessToken(context.Background(), nil, "https://self-hosted.example.com", "rt-xxx")
-	if err == nil {
-		t.Fatal("expected error when refreshing against an unknown platform URL")
+// The refresh_token grant must post the SDK's own client_id, and must work
+// against any platform URL: the SDK does not keep a table of known hosts.
+func TestRefreshAccessToken_postsSDKClientID(t *testing.T) {
+	tests := []struct {
+		name           string
+		oauth2ClientID string
+		env            string
+		wantClientID   string
+	}{
+		{"defaults to the SDK client_id", "", "", DefaultOAuth2ClientID},
+		{"explicit client_id is used", "cpoc_explicit", "", "cpoc_explicit"},
+		{"environment overrides the default", "", "cpoc_env", "cpoc_env"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("TAILOR_PLATFORM_OAUTH2_CLIENT_ID", tt.env)
+			t.Setenv("PLATFORM_OAUTH2_CLIENT_ID", "")
+
+			var (
+				gotPath string
+				gotForm url.Values
+			)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				if err := r.ParseForm(); err != nil {
+					t.Fatalf("ParseForm: %v", err)
+				}
+				gotForm = r.PostForm
+				w.Header().Set("Content-Type", "application/json")
+				if err := json.NewEncoder(w).Encode(map[string]any{
+					"access_token":  "new-at",
+					"refresh_token": "new-rt",
+					"expires_in":    3600,
+				}); err != nil {
+					t.Errorf("encode response: %v", err)
+				}
+			}))
+			defer srv.Close()
+
+			tr, err := RefreshAccessToken(context.Background(), nil, srv.URL, tt.oauth2ClientID, "rt-xxx")
+			if err != nil {
+				t.Fatalf("RefreshAccessToken: %v", err)
+			}
+			if tr.AccessToken != "new-at" || tr.RefreshToken != "new-rt" {
+				t.Errorf("got at=%q rt=%q, want new-at/new-rt", tr.AccessToken, tr.RefreshToken)
+			}
+			if gotPath != "/oauth2/platform/token" {
+				t.Errorf("path = %q, want /oauth2/platform/token", gotPath)
+			}
+			if gotForm.Get("grant_type") != "refresh_token" {
+				t.Errorf("grant_type = %q, want refresh_token", gotForm.Get("grant_type"))
+			}
+			if gotForm.Get("refresh_token") != "rt-xxx" {
+				t.Errorf("refresh_token = %q, want rt-xxx", gotForm.Get("refresh_token"))
+			}
+			if gotForm.Get("client_id") != tt.wantClientID {
+				t.Errorf("client_id = %q, want %q", gotForm.Get("client_id"), tt.wantClientID)
+			}
+		})
 	}
 }
 
@@ -156,24 +211,58 @@ func TestFetchClientCredentialsToken_contextCancellation(t *testing.T) {
 	}
 }
 
-func TestResolveClientID(t *testing.T) {
+// The client_id must not depend on the platform URL: the SDK ships one
+// client_id for every platform and lets the environment override it.
+func TestResolveOAuth2ClientID(t *testing.T) {
 	tests := []struct {
-		name        string
-		platformURL string
-		want        string
+		name     string
+		explicit string
+		env      map[string]string
+		want     string
 	}{
-		{"dev platform", devPlatformURL, devClientID},
-		{"prod platform", "https://api.tailor.tech", prodClientID},
-		{"empty falls back to prod", "", prodClientID},
-		{"other URL returns empty (caller must use WithClientCredentials)", "https://custom.example.com", ""},
-		{"trailing slash on prod still matches", "https://api.tailor.tech/", prodClientID},
-		{"trailing slash on dev still matches", devPlatformURL + "/", devClientID},
+		{"defaults to the SDK client_id", "", nil, DefaultOAuth2ClientID},
+		{"explicit value wins", "cpoc_explicit", map[string]string{"TAILOR_PLATFORM_OAUTH2_CLIENT_ID": "cpoc_env"}, "cpoc_explicit"},
+		{"TAILOR_PLATFORM_OAUTH2_CLIENT_ID is honored", "", map[string]string{"TAILOR_PLATFORM_OAUTH2_CLIENT_ID": "cpoc_env"}, "cpoc_env"},
+		{"PLATFORM_OAUTH2_CLIENT_ID is honored", "", map[string]string{"PLATFORM_OAUTH2_CLIENT_ID": "cpoc_legacy"}, "cpoc_legacy"},
+		{"TAILOR_ prefix takes precedence", "", map[string]string{"TAILOR_PLATFORM_OAUTH2_CLIENT_ID": "cpoc_env", "PLATFORM_OAUTH2_CLIENT_ID": "cpoc_legacy"}, "cpoc_env"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolveClientID(tt.platformURL)
-			if got != tt.want {
-				t.Errorf("resolveClientID(%q) = %q, want %q", tt.platformURL, got, tt.want)
+			t.Setenv("TAILOR_PLATFORM_OAUTH2_CLIENT_ID", "")
+			t.Setenv("PLATFORM_OAUTH2_CLIENT_ID", "")
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			if got := ResolveOAuth2ClientID(tt.explicit); got != tt.want {
+				t.Errorf("ResolveOAuth2ClientID(%q) = %q, want %q", tt.explicit, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestResolvePlatformURL(t *testing.T) {
+	tests := []struct {
+		name     string
+		explicit string
+		env      map[string]string
+		want     string
+	}{
+		{"empty without env stays empty so callers can infer", "", nil, ""},
+		{"explicit value wins", "https://api.dev.tailor.tech", map[string]string{"TAILOR_PLATFORM_URL": "https://env.example.com"}, "https://api.dev.tailor.tech"},
+		{"trailing slash is normalized", "https://api.dev.tailor.tech/", nil, "https://api.dev.tailor.tech"},
+		{"TAILOR_PLATFORM_URL is honored", "", map[string]string{"TAILOR_PLATFORM_URL": "https://env.example.com"}, "https://env.example.com"},
+		{"PLATFORM_URL is honored", "", map[string]string{"PLATFORM_URL": "https://legacy.example.com"}, "https://legacy.example.com"},
+		{"TAILOR_ prefix takes precedence", "", map[string]string{"TAILOR_PLATFORM_URL": "https://env.example.com", "PLATFORM_URL": "https://legacy.example.com"}, "https://env.example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("TAILOR_PLATFORM_URL", "")
+			t.Setenv("PLATFORM_URL", "")
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			if got := ResolvePlatformURL(tt.explicit); got != tt.want {
+				t.Errorf("ResolvePlatformURL(%q) = %q, want %q", tt.explicit, got, tt.want)
 			}
 		})
 	}
