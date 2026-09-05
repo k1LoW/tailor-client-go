@@ -38,6 +38,19 @@ func TestNew_withTokens_emptyAccessToken(t *testing.T) {
 	}
 }
 
+// Persistence needs an SDK config entry to write back to, and the explicit
+// token flow has none. Rejecting the pair keeps the writeback from degrading
+// into a warning nobody reads.
+func TestNew_withTokens_exclusiveWithTokenPersist(t *testing.T) {
+	_, err := New(context.Background(),
+		WithTokens("at", "rt"),
+		WithTokenPersist(),
+	)
+	if err == nil {
+		t.Fatal("expected error when WithTokens is combined with WithTokenPersist")
+	}
+}
+
 func TestNew_withPlatformURL(t *testing.T) {
 	want := "https://api.dev.tailor.tech"
 	c, err := New(context.Background(),

@@ -151,7 +151,7 @@ c, err := tailorclient.New(ctx,
 
 ### Persisting refreshed tokens
 
-By default, tokens refreshed during a session are kept in-memory only. Pass `WithTokenPersist()` to write them back to the SDK config (or keyring, if the user is configured for keyring storage) so other tools stay in sync:
+By default, tokens refreshed during a session are kept in-memory only. Pass `WithTokenPersist()` to write them back to the SDK config (or keyring, if the user is configured for keyring storage) so other tools stay in sync. Only SDK-config-sourced tokens have an entry to write back to, so this cannot be combined with `WithTokens` or `WithClientCredentials`:
 
 ```go
 c, err := tailorclient.New(ctx, tailorclient.WithTokenPersist())
@@ -162,10 +162,10 @@ c, err := tailorclient.New(ctx, tailorclient.WithTokenPersist())
 | Option | Description |
 |--------|-------------|
 | `WithClientCredentials(clientID, clientSecret string)` | Authenticate as a platform machine user via the OAuth2 `client_credentials` grant. Mutually exclusive with `WithTokens` and `WithTokenPersist` |
-| `WithTokens(access, refresh string)` | Use supplied tokens instead of reading the SDK config |
+| `WithTokens(access, refresh string)` | Use supplied tokens instead of reading the SDK config. Mutually exclusive with `WithTokenPersist` |
 | `WithPlatformURL(url string)` | Override the Tailor Platform endpoint. See [Platform and client_id resolution](#platform-and-client_id-resolution) for the full precedence |
 | `WithOAuth2ClientID(id string)` | Override the OAuth2 `client_id` used for the `refresh_token` grant |
-| `WithTokenPersist()` | Write refreshed tokens back to the SDK config (default: off) |
+| `WithTokenPersist()` | Write refreshed tokens back to the SDK config (default: off). Requires SDK-config-sourced tokens, so it cannot be combined with `WithTokens` or `WithClientCredentials` |
 | `WithHTTPClient(h connect.HTTPClient)` | Override the underlying HTTP client |
 | `WithInterceptors(ics ...connect.Interceptor)` | Append additional connect interceptors |
 

@@ -99,6 +99,8 @@ func WithOAuth2ClientID(id string) Option { //nostyle:repetition
 }
 
 // WithTokens uses the supplied tokens instead of reading the SDK config.
+// Mutually exclusive with WithTokenPersist, which has no config entry to
+// write back to in this flow.
 func WithTokens(accessToken, refreshToken string) Option {
 	return func(o *options) {
 		o.accessToken = accessToken
@@ -126,6 +128,9 @@ func WithInterceptors(ics ...connect.Interceptor) Option {
 
 // WithTokenPersist enables writing refreshed tokens back to the SDK config.
 // Disabled by default.
+//
+// Only tokens sourced from the SDK config can be written back, so this is
+// mutually exclusive with WithTokens and WithClientCredentials.
 func WithTokenPersist() Option {
 	return func(o *options) {
 		o.persistTokens = true
@@ -162,7 +167,8 @@ func WithClientCredentials(clientID, clientSecret string) Option { //nostyle:rep
 // Token refresh on unauthenticated unary RPCs is always enabled (using the
 // refresh_token for SDK-config / WithTokens flows, or re-fetching with the
 // stored client_credentials for machine-user flows). SDK config writeback is
-// opt-in via WithTokenPersist and only applies to refresh_token flows.
+// opt-in via WithTokenPersist and applies only to tokens sourced from that
+// config, since the other two flows have no config entry to write back to.
 func New(ctx context.Context, opts ...Option) (*Client, error) {
 	o := &options{}
 	for _, opt := range opts {
@@ -192,7 +198,12 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		o.accessToken = tr.AccessToken
 		o.refreshToken = ""
 
-	case !o.tokensProvided:
+	case o.tokensProvided:
+		if o.persistTokens {
+			return nil, fmt.Errorf("tokens option cannot be combined with WithTokenPersist")
+		}
+
+	default:
 		tokens, err := ReadSDKTokens(o.platformURL)
 		if err != nil {
 			return nil, fmt.Errorf("read SDK tokens: %w", err)
