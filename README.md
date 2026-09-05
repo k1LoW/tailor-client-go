@@ -7,16 +7,19 @@
 
 `tailor-client-go` is an **unofficial** Go client library for the [Tailor Platform](https://docs.tailor.tech/).
 
-It does **not** implement its own login flow. Authentication piggybacks on the official [Tailor SDK](https://github.com/tailor-platform/sdk): you log in once with `npx tailor-sdk login`, and `tailor-client-go` reuses the access / refresh tokens stored by the SDK to authenticate RPCs. Token refresh and (optionally) writeback are kept compatible with the SDK config so other Tailor tools stay in sync.
+> [!IMPORTANT]
+> `tailor-client-go` implements **no login flow of its own**. It runs on the access tokens the official [Tailor SDK](https://github.com/tailor-platform/sdk) already holds, so `npx tailor-sdk login` is a **prerequisite**, not a suggestion. For CI and other unattended callers, use `WithClientCredentials` instead. See [Authentication model](#authentication-model).
 
 In short, `tailorclient.New(ctx)` returns the [buf.build](https://buf.build/tailor-inc/tailor) generated connect-go `OperatorServiceClient` already wired with bearer-token auth and auto-refresh.
 
 ## Features
 
-- Piggybacks on the [Tailor SDK](https://github.com/tailor-platform/sdk) authentication: tokens are sourced from `~/.config/tailor-platform/config.yaml` (file and keyring storage both supported)
-- One-call constructor: `tailorclient.New(ctx)` returns a ready-to-use authenticated client
+- Piggybacks on [Tailor SDK](https://github.com/tailor-platform/sdk) authentication. Tokens are sourced from `~/.config/tailor-platform/config.yaml` (file and keyring storage both supported)
+- OAuth2 `client_credentials` grant for platform machine users via `WithClientCredentials`, for CI and other unattended callers
+- One-call constructor. `tailorclient.New(ctx)` returns a ready-to-use authenticated client
 - Automatic token refresh on `Unauthenticated` RPC errors
 - Optional SDK config writeback on token refresh (off by default) so the SDK and other tools see the new tokens
+- Token handling follows the SDK. The config user key is platform-scoped the way the SDK scopes it, the OAuth2 `client_id` defaults to the SDK's own and honors the same environment variables, and the platform endpoint is taken from the SDK config when you name none
 - Embeds `tailorv1connect.OperatorServiceClient`, so RPC methods are callable directly on the client
 
 ## Install
@@ -27,23 +30,76 @@ $ go get github.com/k1LoW/tailor-client-go
 
 ## Authentication model
 
-`tailor-client-go` does not handle the OAuth2 login flow itself. The expected workflow is:
+`tailor-client-go` does not handle the OAuth2 login flow itself. `New` picks its credentials from one of three sources, in this order.
 
-1. The user (or operator) logs in once via the Tailor SDK:
+| Source | Option | Use it for |
+|--------|--------|-----------|
+| OAuth2 `client_credentials` grant | `WithClientCredentials(clientID, clientSecret)` | CI, service accounts, any unattended caller. The SDK config is never touched |
+| Caller-managed tokens | `WithTokens(access, refresh)` | You already hold tokens and want to manage their lifecycle yourself |
+| Tailor SDK config | *(default)* | Local development, where a human has run `npx tailor-sdk login` |
+
+### Machine user (CI)
+
+Create a platform machine user, then pass its credentials. No SDK login and no SDK config are involved.
+
+```go
+c, err := tailorclient.New(ctx,
+	tailorclient.WithClientCredentials(os.Getenv("TAILOR_CLIENT_ID"), os.Getenv("TAILOR_CLIENT_SECRET")),
+)
+```
+
+Machine user grants do not issue a refresh token, so on an `Unauthenticated` error the client re-fetches with the same credentials. `WithClientCredentials` cannot be combined with `WithTokens` or `WithTokenPersist`.
+
+### SDK config (local development)
+
+1. Log in once via the Tailor SDK.
 
    ```console
    $ npx tailor-sdk login
    ```
 
-   This writes `access_token`, `refresh_token`, and `token_expires_at` for the current user to `~/.config/tailor-platform/config.yaml` (or, when the user is configured for `storage: keyring`, into the OS keyring).
+   This writes the tokens for the current user to `~/.config/tailor-platform/config.yaml`, or into the OS keyring when the user is configured for `storage: keyring`.
 
 2. Any Go program using `tailor-client-go` calls `tailorclient.New(ctx)` and the library transparently:
 
-   - reads the current user's tokens from the SDK config (or keyring),
+   - resolves the `current_user`'s entry in the SDK config,
+   - reads the tokens from the config file or the OS keyring,
    - refreshes the access token if `token_expires_at` is in the past,
    - retries once with a refreshed token if an RPC returns `Unauthenticated`.
 
-If you prefer to manage tokens yourself (e.g. in CI, or against a service account), pass them in explicitly with `WithTokens` and the SDK config is not touched.
+## Platform and client_id resolution
+
+The SDK scopes each login to a platform, and `tailor-client-go` follows the same rules rather than assuming production.
+
+**Platform endpoint**, highest precedence first:
+
+1. `WithPlatformURL(url)`
+2. `TAILOR_PLATFORM_URL`, then `PLATFORM_URL`
+3. The platform recorded on the SDK config user key
+4. `tailorclient.DefaultPlatformURL` (`https://api.tailor.tech`)
+
+Step 3 is what keeps a dev login working. Since SDK config v3, a non-production login is stored under a platform-scoped key while `current_user` keeps the bare user ID:
+
+```yaml
+version: 3
+users:
+  https://api.dev.tailor.tech|ac354dd0-...:   # dev, platform-scoped
+    storage: keyring
+    token_expires_at: '2026-09-02T05:23:39.185Z'
+  98f96ebb-...:                               # production, bare key
+    storage: keyring
+current_user: ac354dd0-...
+```
+
+With no platform named, `New` resolves `current_user` to the dev entry above and talks to `https://api.dev.tailor.tech`, so the dev refresh token is never posted to production. If `current_user` is registered for several non-production platforms, the lookup is ambiguous and `New` asks you to pick one with `WithPlatformURL`.
+
+**OAuth2 `client_id`** for the `refresh_token` grant, highest precedence first:
+
+1. `WithOAuth2ClientID(id)`
+2. `TAILOR_PLATFORM_OAUTH2_CLIENT_ID`, then `PLATFORM_OAUTH2_CLIENT_ID`
+3. `tailorclient.DefaultOAuth2ClientID`, which is the SDK's own public client ID
+
+The `client_id` is deliberately **not** derived from the platform URL. The SDK ships one client ID for every platform and lets the environment override it, so a self-hosted platform is configured through these variables rather than through a table of known hosts.
 
 ## Usage
 
@@ -80,7 +136,7 @@ func main() {
 }
 ```
 
-Without any options, `New` reads the current user's tokens from the Tailor SDK config. When `token_expires_at` indicates the access token is stale, it is refreshed proactively before the client is returned.
+Without any options, `New` reads the current user's tokens from the Tailor SDK config and infers the platform from the config user key. When `token_expires_at` indicates the access token is stale, it is refreshed proactively before the client is returned.
 
 ### Explicit tokens
 
@@ -105,20 +161,23 @@ c, err := tailorclient.New(ctx, tailorclient.WithTokenPersist())
 
 | Option | Description |
 |--------|-------------|
-| `WithPlatformURL(url string)` | Override the Tailor Platform endpoint (default: `https://api.tailor.tech`) |
+| `WithClientCredentials(clientID, clientSecret string)` | Authenticate as a platform machine user via the OAuth2 `client_credentials` grant. Mutually exclusive with `WithTokens` and `WithTokenPersist` |
 | `WithTokens(access, refresh string)` | Use supplied tokens instead of reading the SDK config |
+| `WithPlatformURL(url string)` | Override the Tailor Platform endpoint. See [Platform and client_id resolution](#platform-and-client_id-resolution) for the full precedence |
+| `WithOAuth2ClientID(id string)` | Override the OAuth2 `client_id` used for the `refresh_token` grant |
 | `WithTokenPersist()` | Write refreshed tokens back to the SDK config (default: off) |
 | `WithHTTPClient(h connect.HTTPClient)` | Override the underlying HTTP client |
 | `WithInterceptors(ics ...connect.Interceptor)` | Append additional connect interceptors |
 
 ## How it works
 
-1. Resolves access / refresh tokens (explicit values via `WithTokens`, or the Tailor SDK config)
-2. If the SDK config token is expired, refreshes it proactively against the OAuth2 token endpoint
-3. Builds a connect-go `OperatorServiceClient` wrapped with an interceptor that:
+1. Resolves the platform endpoint and the OAuth2 `client_id` as described in [Platform and client_id resolution](#platform-and-client_id-resolution)
+2. Resolves credentials from the machine user grant (`WithClientCredentials`), the explicit values (`WithTokens`), or the Tailor SDK config
+3. If an SDK config token is expired, refreshes it proactively against the OAuth2 token endpoint
+4. Builds a connect-go `OperatorServiceClient` wrapped with an interceptor that:
    - Attaches the `Authorization: Bearer <token>` header to every request
-   - On an `Unauthenticated` error, exchanges the refresh token for a new access token and retries once
-4. When `WithTokenPersist()` is set, refreshed tokens are written back to the SDK config (or keyring)
+   - On an `Unauthenticated` error, obtains a new access token (via the refresh token, or by re-fetching with the machine user credentials) and retries once
+5. When `WithTokenPersist()` is set, refreshed tokens are written back to the SDK config entry they came from, or to the keyring
 
 ## License
 
