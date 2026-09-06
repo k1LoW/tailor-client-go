@@ -1,15 +1,32 @@
 // Package tailorclient is an UNOFFICIAL Go client library for the Tailor
-// Platform.
+// Platform that runs on the access tokens the official Tailor SDK already
+// holds.
 //
-// It does not implement its own login flow. Authentication piggybacks on the
-// official Tailor SDK (https://github.com/tailor-platform/sdk): the user logs
-// in once with `npx tailor-sdk login`, and this package reuses the access /
-// refresh tokens that the SDK stores in
-// ~/.config/tailor-platform/config.yaml (file or keyring).
+// It implements no login flow of its own. Authentication piggybacks on the
+// Tailor SDK (https://github.com/tailor-platform/sdk): the user logs in once
+// with `npx tailor-sdk login`, and this package reuses the access and refresh
+// tokens the SDK stores in ~/.config/tailor-platform/config.yaml, or in the OS
+// keyring when the user is configured for keyring storage. Running that login
+// is therefore a prerequisite, not a suggestion.
 //
-// New returns a connect-go OperatorServiceClient already wired with
-// bearer-token authentication and automatic refresh on Unauthenticated
-// errors. Tokens can also be supplied explicitly via WithTokens.
+// New picks its credentials from one of three sources.
+//
+//   - WithClientCredentials: an OAuth2 client_credentials grant for a platform
+//     machine user. This is the option for CI and other unattended callers,
+//     and it never touches the SDK config.
+//   - WithTokens: tokens the caller manages itself.
+//   - Otherwise: the current user's tokens from the SDK config.
+//
+// Whichever source is used, New returns a connect-go OperatorServiceClient
+// wired with bearer-token authentication that refreshes on Unauthenticated
+// errors. Refreshed tokens stay in memory unless WithTokenPersist writes them
+// back to the SDK config.
+//
+// Token handling follows the SDK rather than reimplementing it. The config
+// user key is platform-scoped the way the SDK scopes it, the OAuth2 client_id
+// defaults to the SDK's own and honors the same environment variables, and the
+// platform endpoint is taken from the SDK config when the caller names none,
+// so a dev or self-hosted login is never refreshed against production.
 package tailorclient
 
 import (
@@ -44,6 +61,7 @@ type Client struct {
 
 type options struct {
 	platformURL               string
+	oauth2ClientID            string
 	accessToken               string
 	refreshToken              string
 	clientID                  string
@@ -58,7 +76,9 @@ type options struct {
 // Option configures New.
 type Option func(*options)
 
-// WithPlatformURL overrides the Tailor Platform endpoint.
+// WithPlatformURL overrides the Tailor Platform endpoint. Without it the
+// endpoint comes from TAILOR_PLATFORM_URL, PLATFORM_URL, the platform recorded
+// on the SDK config user key, and finally DefaultPlatformURL.
 func WithPlatformURL(u string) Option {
 	return func(o *options) {
 		if u != "" {
@@ -67,7 +87,20 @@ func WithPlatformURL(u string) Option {
 	}
 }
 
+// WithOAuth2ClientID overrides the OAuth2 client_id used for the
+// refresh_token grant. Defaults to TAILOR_PLATFORM_OAUTH2_CLIENT_ID,
+// PLATFORM_OAUTH2_CLIENT_ID, then DefaultOAuth2ClientID.
+func WithOAuth2ClientID(id string) Option { //nostyle:repetition
+	return func(o *options) {
+		if id != "" {
+			o.oauth2ClientID = id
+		}
+	}
+}
+
 // WithTokens uses the supplied tokens instead of reading the SDK config.
+// Mutually exclusive with WithTokenPersist, which has no config entry to
+// write back to in this flow.
 func WithTokens(accessToken, refreshToken string) Option {
 	return func(o *options) {
 		o.accessToken = accessToken
@@ -95,6 +128,9 @@ func WithInterceptors(ics ...connect.Interceptor) Option {
 
 // WithTokenPersist enables writing refreshed tokens back to the SDK config.
 // Disabled by default.
+//
+// Only tokens sourced from the SDK config can be written back, so this is
+// mutually exclusive with WithTokens and WithClientCredentials.
 func WithTokenPersist() Option {
 	return func(o *options) {
 		o.persistTokens = true
@@ -124,22 +160,28 @@ func WithClientCredentials(clientID, clientSecret string) Option { //nostyle:rep
 //     client_credentials grant using a platform machine user.
 //   - WithTokens: use the supplied access/refresh tokens directly.
 //   - Otherwise: read the current user's tokens from the Tailor SDK config,
-//     and proactively refresh them if expired.
+//     and proactively refresh them if expired. The platform is taken from the
+//     config user key unless WithPlatformURL or the environment names one, so
+//     a dev or self-hosted login is not refreshed against production.
 //
 // Token refresh on unauthenticated unary RPCs is always enabled (using the
 // refresh_token for SDK-config / WithTokens flows, or re-fetching with the
 // stored client_credentials for machine-user flows). SDK config writeback is
-// opt-in via WithTokenPersist and only applies to refresh_token flows.
+// opt-in via WithTokenPersist and applies only to tokens sourced from that
+// config, since the other two flows have no config entry to write back to.
 func New(ctx context.Context, opts ...Option) (*Client, error) {
-	o := &options{
-		platformURL: DefaultPlatformURL,
-	}
+	o := &options{}
 	for _, opt := range opts {
 		opt(o)
 	}
+	o.platformURL = ResolvePlatformURL(o.platformURL)
+	var userKey string
 
 	switch {
 	case o.clientCredentialsProvided:
+		if o.platformURL == "" {
+			o.platformURL = DefaultPlatformURL
+		}
 		if o.clientID == "" || o.clientSecret == "" {
 			return nil, fmt.Errorf("client_credentials option requires both clientID and clientSecret")
 		}
@@ -156,17 +198,24 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 		o.accessToken = tr.AccessToken
 		o.refreshToken = ""
 
-	case !o.tokensProvided:
-		at, rt, expiresAt, err := ReadSDKTokens()
+	case o.tokensProvided:
+		if o.persistTokens {
+			return nil, fmt.Errorf("tokens option cannot be combined with WithTokenPersist")
+		}
+
+	default:
+		tokens, err := ReadSDKTokens(o.platformURL)
 		if err != nil {
 			return nil, fmt.Errorf("read SDK tokens: %w", err)
 		}
-		o.accessToken = at
-		o.refreshToken = rt
+		o.platformURL = tokens.PlatformURL
+		o.accessToken = tokens.AccessToken
+		o.refreshToken = tokens.RefreshToken
+		userKey = tokens.UserKey
 
-		if IsTokenExpired(expiresAt) && rt != "" {
+		if IsTokenExpired(tokens.TokenExpiresAt) && o.refreshToken != "" {
 			slog.Info("SDK config token is expired, refreshing proactively")
-			tr, err := RefreshAccessToken(ctx, o.httpClient, o.platformURL, rt)
+			tr, err := RefreshAccessToken(ctx, o.httpClient, o.platformURL, o.oauth2ClientID, o.refreshToken)
 			if err != nil {
 				return nil, fmt.Errorf("token expired and refresh failed: %w", err)
 			}
@@ -176,13 +225,16 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 			}
 			if o.persistTokens {
 				newExpiresAt := time.Now().Add(time.Duration(tr.ExpiresIn) * time.Second).UTC().Format(time.RFC3339)
-				if err := WriteSDKTokens(o.accessToken, o.refreshToken, newExpiresAt); err != nil {
+				if err := WriteSDKTokens(userKey, o.accessToken, o.refreshToken, newExpiresAt); err != nil {
 					slog.Warn("failed to persist refreshed tokens", "error", err)
 				}
 			}
 		}
 	}
 
+	if o.platformURL == "" {
+		o.platformURL = DefaultPlatformURL
+	}
 	if o.accessToken == "" {
 		return nil, fmt.Errorf("no access token available")
 	}
@@ -194,13 +246,13 @@ func New(ctx context.Context, opts ...Option) (*Client, error) {
 	var onRefresh onTokenRefreshFunc
 	if o.persistTokens {
 		onRefresh = func(at, rt, exp string) {
-			if err := WriteSDKTokens(at, rt, exp); err != nil {
+			if err := WriteSDKTokens(userKey, at, rt, exp); err != nil {
 				slog.Warn("failed to persist refreshed tokens", "error", err)
 			}
 		}
 	}
 
-	interceptor := newAutoRefreshInterceptor(o.platformURL, o.accessToken, o.refreshToken, o.clientID, o.clientSecret, o.httpClient, onRefresh)
+	interceptor := newAutoRefreshInterceptor(o.platformURL, o.oauth2ClientID, o.accessToken, o.refreshToken, o.clientID, o.clientSecret, o.httpClient, onRefresh)
 	ics := make([]connect.Interceptor, 0, 1+len(o.extraInterceptors))
 	ics = append(ics, interceptor)
 	ics = append(ics, o.extraInterceptors...)
@@ -316,6 +368,7 @@ type onTokenRefreshFunc func(accessToken, refreshToken, expiresAt string)
 
 type autoRefreshInterceptor struct {
 	platformURL    string
+	oauth2ClientID string
 	token          string
 	refreshToken   string
 	clientID       string
@@ -325,9 +378,10 @@ type autoRefreshInterceptor struct {
 	mu             sync.Mutex
 }
 
-func newAutoRefreshInterceptor(platformURL, token, refreshToken, clientID, clientSecret string, httpClient connect.HTTPClient, onRefresh onTokenRefreshFunc) *autoRefreshInterceptor {
+func newAutoRefreshInterceptor(platformURL, oauth2ClientID, token, refreshToken, clientID, clientSecret string, httpClient connect.HTTPClient, onRefresh onTokenRefreshFunc) *autoRefreshInterceptor {
 	return &autoRefreshInterceptor{
 		platformURL:    platformURL,
+		oauth2ClientID: oauth2ClientID,
 		token:          token,
 		refreshToken:   refreshToken,
 		clientID:       clientID,
@@ -398,7 +452,7 @@ func (i *autoRefreshInterceptor) doRefresh(ctx context.Context) (string, error) 
 		return i.token, nil
 	}
 
-	tr, err := RefreshAccessToken(ctx, i.httpClient, i.platformURL, i.refreshToken)
+	tr, err := RefreshAccessToken(ctx, i.httpClient, i.platformURL, i.oauth2ClientID, i.refreshToken)
 	if err != nil {
 		return "", err
 	}

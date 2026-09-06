@@ -16,6 +16,8 @@ import (
 )
 
 func TestNew_withTokens(t *testing.T) {
+	clearPlatformEnvForTest(t)
+
 	c, err := New(context.Background(), WithTokens("at", "rt"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -38,6 +40,19 @@ func TestNew_withTokens_emptyAccessToken(t *testing.T) {
 	}
 }
 
+// Persistence needs an SDK config entry to write back to, and the explicit
+// token flow has none. Rejecting the pair keeps the writeback from degrading
+// into a warning nobody reads.
+func TestNew_withTokens_exclusiveWithTokenPersist(t *testing.T) {
+	_, err := New(context.Background(),
+		WithTokens("at", "rt"),
+		WithTokenPersist(),
+	)
+	if err == nil {
+		t.Fatal("expected error when WithTokens is combined with WithTokenPersist")
+	}
+}
+
 func TestNew_withPlatformURL(t *testing.T) {
 	want := "https://api.dev.tailor.tech"
 	c, err := New(context.Background(),
@@ -53,7 +68,7 @@ func TestNew_withPlatformURL(t *testing.T) {
 }
 
 func TestAutoRefreshInterceptor_attachesBearer(t *testing.T) {
-	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "rt", "", "", nil, nil)
+	i := newAutoRefreshInterceptor("https://example.com", "", "tok-123", "rt", "", "", nil, nil)
 
 	var gotAuth string
 	next := connect.UnaryFunc(func(_ context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
@@ -72,7 +87,7 @@ func TestAutoRefreshInterceptor_attachesBearer(t *testing.T) {
 }
 
 func TestAutoRefreshInterceptor_unauthenticatedWithoutRefreshToken(t *testing.T) {
-	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "", "", "", nil, nil)
+	i := newAutoRefreshInterceptor("https://example.com", "", "tok-123", "", "", "", nil, nil)
 
 	authErr := errors.New("unauthenticated")
 	next := connect.UnaryFunc(func(_ context.Context, _ connect.AnyRequest) (connect.AnyResponse, error) {
@@ -90,7 +105,7 @@ func TestAutoRefreshInterceptor_unauthenticatedWithoutRefreshToken(t *testing.T)
 }
 
 func TestAutoRefreshInterceptor_passesThroughNonAuthErrors(t *testing.T) {
-	i := newAutoRefreshInterceptor("https://example.com", "tok-123", "rt", "", "", nil, nil)
+	i := newAutoRefreshInterceptor("https://example.com", "", "tok-123", "rt", "", "", nil, nil)
 
 	otherErr := errors.New("not found")
 	calls := 0
@@ -125,7 +140,7 @@ func (f *fakeStreamingClientConn) ResponseTrailer() http.Header   { return http.
 func (f *fakeStreamingClientConn) CloseResponse() error           { return nil }
 
 func TestAutoRefreshInterceptor_attachesBearerOnStreaming(t *testing.T) {
-	i := newAutoRefreshInterceptor("https://example.com", "tok-456", "rt", "", "", nil, nil)
+	i := newAutoRefreshInterceptor("https://example.com", "", "tok-456", "rt", "", "", nil, nil)
 
 	fake := &fakeStreamingClientConn{header: http.Header{}}
 	next := connect.StreamingClientFunc(func(_ context.Context, _ connect.Spec) connect.StreamingClientConn {
@@ -324,7 +339,7 @@ func TestAutoRefreshInterceptor_clientCredentialsReFetch(t *testing.T) {
 	}))
 	defer tokenSrv.Close()
 
-	i := newAutoRefreshInterceptor(tokenSrv.URL, "old-token", "", "cid", "csecret", nil, nil)
+	i := newAutoRefreshInterceptor(tokenSrv.URL, "", "old-token", "", "cid", "csecret", nil, nil)
 
 	if !i.canRefresh() {
 		t.Fatal("canRefresh should be true with client credentials")

@@ -8,18 +8,20 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 )
 
-const (
-	defaultAuthURL = "https://api.tailor.tech/oauth2/platform"
-	prodClientID   = "cpoc_6X8NTyohCX1PMRilxSsmJ9CVh8ZNmH5B"
-	devClientID    = "cpoc_PttbVewKJUdpYXDEFVFQOjSDcQS3Cyo3"
-	devPlatformURL = "https://api.dev.tailor.tech"
-)
+// DefaultOAuth2ClientID is the public OAuth2 client_id the Tailor SDK uses
+// for the refresh_token grant. The SDK ships a single client_id for every
+// platform and lets the environment override it, so this package must not
+// invent per-platform IDs of its own.
+const DefaultOAuth2ClientID = "cpoc_0Iudir72fqSpqC6GQ58ri1cLAqcq5vJl" //nostyle:repetition
+
+const defaultAuthURL = DefaultPlatformURL + "/oauth2/platform"
 
 // TokenResponse is the response from the OAuth2 token endpoint.
 type TokenResponse struct {
@@ -31,17 +33,17 @@ type TokenResponse struct {
 
 // RefreshAccessToken exchanges a refresh_token for a new access_token.
 //
+// oauth2ClientID selects the OAuth2 client the grant is made against; pass ""
+// to fall back to the environment and then to DefaultOAuth2ClientID, the same
+// way the SDK resolves it.
+//
 // ctx is propagated to the underlying HTTP request so callers can apply
 // deadlines and cancellation to the token round-trip. httpClient overrides
 // the HTTP transport (e.g. for custom CAs or proxies on self-hosted
 // platforms); pass nil to use http.DefaultClient.
-func RefreshAccessToken(ctx context.Context, httpClient connect.HTTPClient, platformURL, refreshToken string) (*TokenResponse, error) {
-	authURL := resolveAuthURL(platformURL)
-	clientID := resolveClientID(platformURL)
-	if clientID == "" {
-		return nil, fmt.Errorf("refresh_token flow requires a known dev or prod platform URL (got %q); use WithClientCredentials for custom or self-hosted platforms", platformURL)
-	}
-	tokenEndpoint := authURL + "/token"
+func RefreshAccessToken(ctx context.Context, httpClient connect.HTTPClient, platformURL, oauth2ClientID, refreshToken string) (*TokenResponse, error) {
+	clientID := ResolveOAuth2ClientID(oauth2ClientID)
+	tokenEndpoint := resolveAuthURL(platformURL) + "/token"
 
 	slog.Info("Refreshing access token", "endpoint", tokenEndpoint, "clientId", clientID)
 
@@ -164,25 +166,44 @@ func resolveAuthURL(platformURL string) string {
 	return platformURL + "/oauth2/platform"
 }
 
-// resolveClientID returns the OAuth2 client_id baked into the SDK for the
-// refresh_token grant. For self-hosted or custom platforms it returns "" so
-// RefreshAccessToken can surface an explicit error rather than silently
-// posting the production tenant's client_id to a third-party endpoint.
-func resolveClientID(platformURL string) string {
-	switch normalizePlatformURL(platformURL) {
-	case "", DefaultPlatformURL:
-		return prodClientID
-	case devPlatformURL:
-		return devClientID
-	default:
-		return ""
+// ResolveOAuth2ClientID mirrors the SDK's getOAuth2ClientId: an explicit value
+// wins, then TAILOR_PLATFORM_OAUTH2_CLIENT_ID, then PLATFORM_OAUTH2_CLIENT_ID,
+// then the SDK default. The client_id is not derived from the platform URL,
+// because a self-hosted platform is configured through the same environment
+// variables rather than through a table of known hosts.
+func ResolveOAuth2ClientID(oauth2ClientID string) string { //nostyle:repetition
+	if oauth2ClientID != "" {
+		return oauth2ClientID
 	}
+	for _, key := range []string{"TAILOR_PLATFORM_OAUTH2_CLIENT_ID", "PLATFORM_OAUTH2_CLIENT_ID"} {
+		if v := os.Getenv(key); v != "" {
+			return v
+		}
+	}
+	return DefaultOAuth2ClientID
+}
+
+// ResolvePlatformURL mirrors the SDK's getPlatformBaseUrl: an explicit value
+// wins, then TAILOR_PLATFORM_URL, then PLATFORM_URL. It returns "" when none
+// is set so callers can apply their own fallback.
+func ResolvePlatformURL(platformURL string) string {
+	if platformURL != "" {
+		return normalizePlatformURL(platformURL)
+	}
+	for _, key := range []string{"TAILOR_PLATFORM_URL", "PLATFORM_URL"} {
+		if v := os.Getenv(key); v != "" {
+			return normalizePlatformURL(v)
+		}
+	}
+	return ""
 }
 
 // normalizePlatformURL strips a trailing slash so that URL concatenation in
-// resolveAuthURL and the exact-match switch in resolveClientID behave
+// resolveAuthURL and the exact matches in sdkUserKey and findSDKUser behave
 // predictably when callers pass a config-style value such as
-// "https://api.tailor.tech/".
+// "https://api.tailor.tech/". Those two compare against the SDK config, where
+// an unnormalized value would produce a key of the form
+// "https://api.dev.tailor.tech/|user" that matches nothing.
 func normalizePlatformURL(platformURL string) string {
 	return strings.TrimRight(platformURL, "/")
 }
