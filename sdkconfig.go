@@ -100,7 +100,7 @@ func findSDKUser(cfg *SDKConfig, user, platformURL string) (userKey string, entr
 				return user, e, platformURL, nil
 			}
 		}
-		return "", nil, "", fmt.Errorf("user %q not found for platform %s in %s (looked up key %q)", user, platformURL, sdkConfigFilePath(), key)
+		return "", nil, "", fmt.Errorf("user %q not found for platform %q in %s (looked up key %q)", user, platformURL, sdkConfigFilePath(), key)
 	}
 
 	if e := cfg.Users[user]; e != nil {
@@ -129,7 +129,7 @@ func findSDKUser(cfg *SDKConfig, user, platformURL string) (userKey string, entr
 		for _, k := range matched {
 			urls = append(urls, normalizePlatformURL(strings.TrimSuffix(k, suffix)))
 		}
-		return "", nil, "", fmt.Errorf("user %q is registered for multiple platforms in %s (%s); select one with WithPlatformURL", user, sdkConfigFilePath(), strings.Join(urls, ", "))
+		return "", nil, "", fmt.Errorf("user %q is registered for multiple platforms in %s (%s); select one by passing platformURL to ReadSDKTokens, or WithPlatformURL to New", user, sdkConfigFilePath(), strings.Join(urls, ", "))
 	}
 }
 
