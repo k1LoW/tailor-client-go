@@ -199,9 +199,11 @@ func ResolvePlatformURL(platformURL string) string {
 }
 
 // normalizePlatformURL strips a trailing slash so that URL concatenation in
-// resolveAuthURL and the exact-match switch in resolveClientID behave
+// resolveAuthURL and the exact matches in sdkUserKey and findSDKUser behave
 // predictably when callers pass a config-style value such as
-// "https://api.tailor.tech/".
+// "https://api.tailor.tech/". Those two compare against the SDK config, where
+// an unnormalized value would produce a key of the form
+// "https://api.dev.tailor.tech/|user" that matches nothing.
 func normalizePlatformURL(platformURL string) string {
 	return strings.TrimRight(platformURL, "/")
 }
