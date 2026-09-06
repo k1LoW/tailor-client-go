@@ -120,11 +120,14 @@ func findSDKUser(cfg *SDKConfig, user, platformURL string) (userKey string, entr
 		return "", nil, "", fmt.Errorf("user %q not found in %s", user, sdkConfigFilePath())
 	case 1:
 		k := matched[0]
-		return k, cfg.Users[k], strings.TrimSuffix(k, suffix), nil
+		// Only the platform is normalized. The key is what WriteSDKTokens
+		// indexes the users map with, so it has to stay byte-identical to
+		// what the config holds.
+		return k, cfg.Users[k], normalizePlatformURL(strings.TrimSuffix(k, suffix)), nil
 	default:
 		urls := make([]string, 0, len(matched))
 		for _, k := range matched {
-			urls = append(urls, strings.TrimSuffix(k, suffix))
+			urls = append(urls, normalizePlatformURL(strings.TrimSuffix(k, suffix)))
 		}
 		return "", nil, "", fmt.Errorf("user %q is registered for multiple platforms in %s (%s); select one with WithPlatformURL", user, sdkConfigFilePath(), strings.Join(urls, ", "))
 	}

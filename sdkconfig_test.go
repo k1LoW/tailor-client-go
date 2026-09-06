@@ -48,7 +48,7 @@ users:
 `
 
 // clearPlatformEnvForTest isolates a test from the platform environment
-// variables New() honours ahead of SDK config inference. Without it a runner
+// variables New() honors ahead of SDK config inference. Without it a runner
 // that happens to export TAILOR_PLATFORM_URL steers New() at that platform
 // and the inference assertions fail for reasons unrelated to the code.
 func clearPlatformEnvForTest(t *testing.T) {
@@ -201,6 +201,33 @@ func TestReadSDKTokens_legacyKeyFallback(t *testing.T) {
 	}
 	if want := "https://api.dev.tailor.tech"; tokens.PlatformURL != want {
 		t.Errorf("platform URL = %q, want %q", tokens.PlatformURL, want)
+	}
+}
+
+// The SDK normalizes before it writes a key, but a hand-edited or
+// older-tooling config can still carry a trailing slash. The inferred platform
+// becomes New()'s connect-go base URL, where a stray slash doubles up in every
+// RPC path, so it is normalized on the way out. The key itself is not, because
+// WriteSDKTokens indexes the config with it.
+func TestReadSDKTokens_inferredPlatformIsNormalized(t *testing.T) {
+	writeSDKConfigForTest(t, `version: 3
+current_user: alice
+users:
+  https://api.dev.tailor.tech/|alice:
+    storage: file
+    access_token: dev-at
+    token_expires_at: 2099-12-31T00:00:00Z
+`)
+
+	tokens, err := ReadSDKTokens("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := "https://api.dev.tailor.tech"; tokens.PlatformURL != want {
+		t.Errorf("platform URL = %q, want %q", tokens.PlatformURL, want)
+	}
+	if want := "https://api.dev.tailor.tech/|alice"; tokens.UserKey != want {
+		t.Errorf("user key = %q, want %q", tokens.UserKey, want)
 	}
 }
 
