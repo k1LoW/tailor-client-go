@@ -16,6 +16,8 @@ import (
 )
 
 func TestNew_withTokens(t *testing.T) {
+	clearPlatformEnvForTest(t)
+
 	c, err := New(context.Background(), WithTokens("at", "rt"))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

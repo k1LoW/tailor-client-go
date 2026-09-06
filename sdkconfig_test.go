@@ -47,8 +47,19 @@ users:
     token_expires_at: 2099-12-31T00:00:00Z
 `
 
+// clearPlatformEnvForTest isolates a test from the platform environment
+// variables New() honours ahead of SDK config inference. Without it a runner
+// that happens to export TAILOR_PLATFORM_URL steers New() at that platform
+// and the inference assertions fail for reasons unrelated to the code.
+func clearPlatformEnvForTest(t *testing.T) {
+	t.Helper()
+	t.Setenv("TAILOR_PLATFORM_URL", "")
+	t.Setenv("PLATFORM_URL", "")
+}
+
 func writeSDKConfigForTest(t *testing.T, contents string) {
 	t.Helper()
+	clearPlatformEnvForTest(t)
 	dir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	cfgDir := filepath.Join(dir, "tailor-platform")
