@@ -3,9 +3,9 @@ module github.com/k1LoW/tailor-client-go
 go 1.26.8
 
 require (
-	buf.build/gen/go/tailor-inc/tailor/connectrpc/go v1.20.0-20260904015633-0ba2ac252f7d.1
-	buf.build/gen/go/tailor-inc/tailor/protocolbuffers/go v1.36.12-20260904015633-0ba2ac252f7d.2
-	connectrpc.com/connect v1.20.0
+	buf.build/gen/go/tailor-inc/tailor/connectrpc/go v1.21.1-20261126045825-3a50ee0df793.1
+	buf.build/gen/go/tailor-inc/tailor/protocolbuffers/go v1.36.12-20261126045825-3a50ee0df793.2
+	connectrpc.com/connect v1.21.1
 	github.com/goccy/go-yaml v1.19.2
 	github.com/zalando/go-keyring v0.2.8
 )
