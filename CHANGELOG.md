@@ -1,5 +1,10 @@
 # Changelog
 
+## [v0.5.0](https://github.com/k1LoW/tailor-client-go/compare/v0.4.1...v0.5.0) - 2026-11-26
+
+### Other Changes
+- fix!: stop reading PLATFORM_URL and PLATFORM_OAUTH2_CLIENT_ID by @k1LoW in https://github.com/k1LoW/tailor-client-go/pull/30
+
 ## [v0.4.1](https://github.com/k1LoW/tailor-client-go/compare/v0.4.0...v0.4.1) - 2026-11-26
 
 ### Dependency Updates ⬆️
