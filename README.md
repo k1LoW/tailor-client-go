@@ -74,7 +74,7 @@ The SDK scopes each login to a platform, and `tailor-client-go` follows the same
 **Platform endpoint**, highest precedence first:
 
 1. `WithPlatformURL(url)`
-2. `TAILOR_PLATFORM_URL`, then `PLATFORM_URL`
+2. `TAILOR_PLATFORM_URL`
 3. The platform recorded on the SDK config user key
 4. `tailorclient.DefaultPlatformURL` (`https://api.tailor.tech`)
 
@@ -96,7 +96,7 @@ With no platform named, `New` resolves `current_user` to the dev entry above and
 **OAuth2 `client_id`** for the `refresh_token` grant, highest precedence first:
 
 1. `WithOAuth2ClientID(id)`
-2. `TAILOR_PLATFORM_OAUTH2_CLIENT_ID`, then `PLATFORM_OAUTH2_CLIENT_ID`
+2. `TAILOR_PLATFORM_OAUTH2_CLIENT_ID`
 3. `tailorclient.DefaultOAuth2ClientID`, which is the SDK's own public client ID
 
 The `client_id` is deliberately **not** derived from the platform URL. The SDK ships one client ID for every platform and lets the environment override it, so a self-hosted platform is configured through these variables rather than through a table of known hosts.

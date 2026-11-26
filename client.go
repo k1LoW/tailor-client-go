@@ -77,8 +77,8 @@ type options struct {
 type Option func(*options)
 
 // WithPlatformURL overrides the Tailor Platform endpoint. Without it the
-// endpoint comes from TAILOR_PLATFORM_URL, PLATFORM_URL, the platform recorded
-// on the SDK config user key, and finally DefaultPlatformURL.
+// endpoint comes from TAILOR_PLATFORM_URL, the platform recorded on the SDK
+// config user key, and finally DefaultPlatformURL.
 func WithPlatformURL(u string) Option {
 	return func(o *options) {
 		if u != "" {
@@ -88,8 +88,8 @@ func WithPlatformURL(u string) Option {
 }
 
 // WithOAuth2ClientID overrides the OAuth2 client_id used for the
-// refresh_token grant. Defaults to TAILOR_PLATFORM_OAUTH2_CLIENT_ID,
-// PLATFORM_OAUTH2_CLIENT_ID, then DefaultOAuth2ClientID.
+// refresh_token grant. Defaults to TAILOR_PLATFORM_OAUTH2_CLIENT_ID, then
+// DefaultOAuth2ClientID.
 func WithOAuth2ClientID(id string) Option { //nostyle:repetition
 	return func(o *options) {
 		if id != "" {

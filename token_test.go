@@ -73,7 +73,6 @@ func TestRefreshAccessToken_postsSDKClientID(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("TAILOR_PLATFORM_OAUTH2_CLIENT_ID", tt.env)
-			t.Setenv("PLATFORM_OAUTH2_CLIENT_ID", "")
 
 			var (
 				gotPath string
@@ -223,13 +222,11 @@ func TestResolveOAuth2ClientID(t *testing.T) {
 		{"defaults to the SDK client_id", "", nil, DefaultOAuth2ClientID},
 		{"explicit value wins", "cpoc_explicit", map[string]string{"TAILOR_PLATFORM_OAUTH2_CLIENT_ID": "cpoc_env"}, "cpoc_explicit"},
 		{"TAILOR_PLATFORM_OAUTH2_CLIENT_ID is honored", "", map[string]string{"TAILOR_PLATFORM_OAUTH2_CLIENT_ID": "cpoc_env"}, "cpoc_env"},
-		{"PLATFORM_OAUTH2_CLIENT_ID is honored", "", map[string]string{"PLATFORM_OAUTH2_CLIENT_ID": "cpoc_legacy"}, "cpoc_legacy"},
-		{"TAILOR_ prefix takes precedence", "", map[string]string{"TAILOR_PLATFORM_OAUTH2_CLIENT_ID": "cpoc_env", "PLATFORM_OAUTH2_CLIENT_ID": "cpoc_legacy"}, "cpoc_env"},
+		{"PLATFORM_OAUTH2_CLIENT_ID is ignored", "", map[string]string{"PLATFORM_OAUTH2_CLIENT_ID": "cpoc_legacy"}, DefaultOAuth2ClientID},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("TAILOR_PLATFORM_OAUTH2_CLIENT_ID", "")
-			t.Setenv("PLATFORM_OAUTH2_CLIENT_ID", "")
 			for k, v := range tt.env {
 				t.Setenv(k, v)
 			}
@@ -251,13 +248,11 @@ func TestResolvePlatformURL(t *testing.T) {
 		{"explicit value wins", "https://api.dev.tailor.tech", map[string]string{"TAILOR_PLATFORM_URL": "https://env.example.com"}, "https://api.dev.tailor.tech"},
 		{"trailing slash is normalized", "https://api.dev.tailor.tech/", nil, "https://api.dev.tailor.tech"},
 		{"TAILOR_PLATFORM_URL is honored", "", map[string]string{"TAILOR_PLATFORM_URL": "https://env.example.com"}, "https://env.example.com"},
-		{"PLATFORM_URL is honored", "", map[string]string{"PLATFORM_URL": "https://legacy.example.com"}, "https://legacy.example.com"},
-		{"TAILOR_ prefix takes precedence", "", map[string]string{"TAILOR_PLATFORM_URL": "https://env.example.com", "PLATFORM_URL": "https://legacy.example.com"}, "https://env.example.com"},
+		{"PLATFORM_URL is ignored", "", map[string]string{"PLATFORM_URL": "https://legacy.example.com"}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("TAILOR_PLATFORM_URL", "")
-			t.Setenv("PLATFORM_URL", "")
 			for k, v := range tt.env {
 				t.Setenv(k, v)
 			}
