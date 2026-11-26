@@ -1,11 +1,11 @@
 buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20250717185734-6c6e0d3c608e.2 h1:LR/hQgkGvgpRbq1vh7CcsdvHwa/65704g1fngWUGO7g=
 buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20250717185734-6c6e0d3c608e.2/go.mod h1:TCt1lluMFnctISJXvkIQ4x3ABrPuUKCWKyjKdkJNBpw=
-buf.build/gen/go/tailor-inc/tailor/connectrpc/go v1.20.0-20260904015633-0ba2ac252f7d.1 h1:7e+XIbbYL9oLafoV1Qznpy5sextkzJwITGJGy1aqmGU=
-buf.build/gen/go/tailor-inc/tailor/connectrpc/go v1.20.0-20260904015633-0ba2ac252f7d.1/go.mod h1:x0dOxisA4gT4n6QGkrH9JIevrD7/GTHGqWar4HC4QVA=
-buf.build/gen/go/tailor-inc/tailor/protocolbuffers/go v1.36.12-20260904015633-0ba2ac252f7d.2 h1:E/Ke5kAvNfNBdmYRL1GeUp847WibdkIzQrVikLvVAHQ=
-buf.build/gen/go/tailor-inc/tailor/protocolbuffers/go v1.36.12-20260904015633-0ba2ac252f7d.2/go.mod h1:zQjdsqdmWNJnZtYnnPS5fTl7MqSYtQbE4bKfuNIDlXU=
-connectrpc.com/connect v1.20.0 h1:6TNDAB+WeNd2uolWNlYczB5E0KNNaVMNUEx8JEUsPmQ=
-connectrpc.com/connect v1.20.0/go.mod h1:A2ygJrukXwWy32vkCAAHNVguZrqZ+jeZ9rGRnGR4dN4=
+buf.build/gen/go/tailor-inc/tailor/connectrpc/go v1.21.1-20261126045825-3a50ee0df793.1 h1:LltWBGzRcs84OpHoBG7NWHDWOGlbHOIWjDybZ15KB10=
+buf.build/gen/go/tailor-inc/tailor/connectrpc/go v1.21.1-20261126045825-3a50ee0df793.1/go.mod h1:0N6006fR1KQWWWbsR8IB8nN3O3GFC3LqFCWP4aS7OpU=
+buf.build/gen/go/tailor-inc/tailor/protocolbuffers/go v1.36.12-20261126045825-3a50ee0df793.2 h1:nqA2w4vLMUTkB2b1br0krQ7J9CcyLSa5Yq3CEnDJSAg=
+buf.build/gen/go/tailor-inc/tailor/protocolbuffers/go v1.36.12-20261126045825-3a50ee0df793.2/go.mod h1:zQjdsqdmWNJnZtYnnPS5fTl7MqSYtQbE4bKfuNIDlXU=
+connectrpc.com/connect v1.21.1 h1:h2kacdlzXpZU2OQFSv98xkjYXNUSr/ptxmGVbS/+CRM=
+connectrpc.com/connect v1.21.1/go.mod h1:fhMcVJ5w6r/yTYhnkEbW6+sIF7OZ5Ay7KYgmfebh2ek=
 github.com/danieljoos/wincred v1.2.3 h1:v7dZC2x32Ut3nEfRH+vhoZGvN72+dQ/snVXo/vMFLdQ=
 github.com/danieljoos/wincred v1.2.3/go.mod h1:6qqX0WNrS4RzPZ1tnroDzq9kY3fu1KwE7MRLQK4X0bs=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
