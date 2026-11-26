@@ -54,7 +54,6 @@ users:
 func clearPlatformEnvForTest(t *testing.T) {
 	t.Helper()
 	t.Setenv("TAILOR_PLATFORM_URL", "")
-	t.Setenv("PLATFORM_URL", "")
 }
 
 func writeSDKConfigForTest(t *testing.T, contents string) {

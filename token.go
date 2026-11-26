@@ -167,33 +167,28 @@ func resolveAuthURL(platformURL string) string {
 }
 
 // ResolveOAuth2ClientID mirrors the SDK's getOAuth2ClientId: an explicit value
-// wins, then TAILOR_PLATFORM_OAUTH2_CLIENT_ID, then PLATFORM_OAUTH2_CLIENT_ID,
-// then the SDK default. The client_id is not derived from the platform URL,
+// wins, then TAILOR_PLATFORM_OAUTH2_CLIENT_ID, then the SDK default. The client_id is not derived from the platform URL,
 // because a self-hosted platform is configured through the same environment
 // variables rather than through a table of known hosts.
 func ResolveOAuth2ClientID(oauth2ClientID string) string { //nostyle:repetition
 	if oauth2ClientID != "" {
 		return oauth2ClientID
 	}
-	for _, key := range []string{"TAILOR_PLATFORM_OAUTH2_CLIENT_ID", "PLATFORM_OAUTH2_CLIENT_ID"} {
-		if v := os.Getenv(key); v != "" {
-			return v
-		}
+	if v := os.Getenv("TAILOR_PLATFORM_OAUTH2_CLIENT_ID"); v != "" {
+		return v
 	}
 	return DefaultOAuth2ClientID
 }
 
 // ResolvePlatformURL mirrors the SDK's getPlatformBaseUrl: an explicit value
-// wins, then TAILOR_PLATFORM_URL, then PLATFORM_URL. It returns "" when none
+// wins, then TAILOR_PLATFORM_URL. It returns "" when none
 // is set so callers can apply their own fallback.
 func ResolvePlatformURL(platformURL string) string {
 	if platformURL != "" {
 		return normalizePlatformURL(platformURL)
 	}
-	for _, key := range []string{"TAILOR_PLATFORM_URL", "PLATFORM_URL"} {
-		if v := os.Getenv(key); v != "" {
-			return normalizePlatformURL(v)
-		}
+	if v := os.Getenv("TAILOR_PLATFORM_URL"); v != "" {
+		return normalizePlatformURL(v)
 	}
 	return ""
 }
