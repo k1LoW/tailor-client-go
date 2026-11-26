@@ -1,6 +1,6 @@
 module github.com/k1LoW/tailor-client-go
 
-go 1.26.1
+go 1.26.8
 
 require (
 	buf.build/gen/go/tailor-inc/tailor/connectrpc/go v1.20.0-20260904015633-0ba2ac252f7d.1
