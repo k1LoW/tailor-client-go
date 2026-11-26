@@ -8,7 +8,7 @@
 `tailor-client-go` is an **unofficial** Go client library for the [Tailor Platform](https://docs.tailor.tech/).
 
 > [!IMPORTANT]
-> `tailor-client-go` implements **no login flow of its own**. It runs on the access tokens the official [Tailor SDK](https://github.com/tailor-platform/sdk) already holds, so `npx tailor-sdk login` is a **prerequisite**, not a suggestion. For CI and other unattended callers, use `WithClientCredentials` instead. See [Authentication model](#authentication-model).
+> `tailor-client-go` implements **no login flow of its own**. It runs on the access tokens the official [Tailor SDK](https://github.com/tailor-platform/sdk) already holds, so `npx @tailor-platform/sdk login` is a **prerequisite**, not a suggestion. For CI and other unattended callers, use `WithClientCredentials` instead. See [Authentication model](#authentication-model).
 
 In short, `tailorclient.New(ctx)` returns the [buf.build](https://buf.build/tailor-inc/tailor) generated connect-go `OperatorServiceClient` already wired with bearer-token auth and auto-refresh.
 
@@ -36,7 +36,7 @@ $ go get github.com/k1LoW/tailor-client-go
 |--------|--------|-----------|
 | OAuth2 `client_credentials` grant | `WithClientCredentials(clientID, clientSecret)` | CI, service accounts, any unattended caller. The SDK config is never touched |
 | Caller-managed tokens | `WithTokens(access, refresh)` | You already hold tokens and want to manage their lifecycle yourself |
-| Tailor SDK config | *(default)* | Local development, where a human has run `npx tailor-sdk login` |
+| Tailor SDK config | *(default)* | Local development, where a human has run `npx @tailor-platform/sdk login` |
 
 ### Machine user (CI)
 
@@ -55,7 +55,7 @@ Machine user grants do not issue a refresh token, so on an `Unauthenticated` err
 1. Log in once via the Tailor SDK.
 
    ```console
-   $ npx tailor-sdk login
+   $ npx @tailor-platform/sdk login
    ```
 
    This writes the tokens for the current user to `~/.config/tailor-platform/config.yaml`, or into the OS keyring when the user is configured for `storage: keyring`.

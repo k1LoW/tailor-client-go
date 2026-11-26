@@ -46,7 +46,7 @@ func ExampleNew_explicitTokens() {
 
 // ExampleNew_clientCredentials authenticates as a platform machine user via
 // the OAuth2 client_credentials grant. This is the option for CI and other
-// unattended callers: it needs no `npx tailor-sdk login` and never touches the
+// unattended callers: it needs no `npx @tailor-platform/sdk login` and never touches the
 // SDK config.
 func ExampleNew_clientCredentials() { //nostyle:repetition
 	ctx := context.Background()

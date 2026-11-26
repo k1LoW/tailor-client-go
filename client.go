@@ -4,7 +4,7 @@
 //
 // It implements no login flow of its own. Authentication piggybacks on the
 // Tailor SDK (https://github.com/tailor-platform/sdk): the user logs in once
-// with `npx tailor-sdk login`, and this package reuses the access and refresh
+// with `npx @tailor-platform/sdk login`, and this package reuses the access and refresh
 // tokens the SDK stores in ~/.config/tailor-platform/config.yaml, or in the OS
 // keyring when the user is configured for keyring storage. Running that login
 // is therefore a prerequisite, not a suggestion.
